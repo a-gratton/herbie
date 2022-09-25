@@ -1,0 +1,28 @@
+[package]
+authors = ["Aidan Gratton <gratton.aidan@gmail.com>"]
+edition = "2021"
+readme = "README.md"
+name = "braincell"
+version = "0.1.0"
+
+[dependencies]
+embedded-hal = "0.2"
+nb = "1"
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+panic-halt = "0.2"
+
+[dependencies.stm32f4xx-hal]
+version = "0.13.2"
+features = ["stm32f446"] # replace the model of your microcontroller here
+
+# this lets you use `cargo fix`!
+[[bin]]
+name = "braincell"
+test = false
+bench = false
+
+[profile.release]
+codegen-units = 1 # better optimizations
+debug = true # symbols are nice and they don't increase the size on Flash
+lto = true # better optimizations
