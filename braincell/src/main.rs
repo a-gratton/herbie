@@ -3,15 +3,18 @@
 
 // Halt on panic
 use panic_halt as _; // panic handler
+use rtic::app;
 
-use cortex_m::asm;
-use cortex_m_rt::entry;
-use stm32f4xx_hal as hal;
+#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
+mod app {
+    #[shared]
+    struct Shared {}
 
+    #[local]
+    struct Local {}
 
-#[entry]
-fn main() -> ! {
-    loop {
-        asm::nop();
+    #[init]
+    fn init(_: init::Context) -> (Shared, Local, init::Monotonics) {
+        (Shared {}, Local {}, init::Monotonics())
     }
 }
