@@ -93,7 +93,6 @@ def main(argv):
 
     # flash board
     if flash:
-        print('flashing')
         run_shell_cmd('st-flash --reset write {}.bin 0x8000000'.format(build_target))
 
 
