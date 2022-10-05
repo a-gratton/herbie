@@ -3,7 +3,7 @@
 
 // Halt on panic
 use panic_halt as _; // panic handler
-use rtic::app;
+// use rtic::app;
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
 mod app {

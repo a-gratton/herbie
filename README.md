@@ -13,16 +13,16 @@ Braincell is written in rust and compiled with cargo. To install rust, follow th
 You will also need to install some embedded-specific applications to successfully build braincell- I recommend following the [embedded rust guide](https://docs.rust-embedded.org/book/intro/install.html). Note that this project targets an STM32F4 procesor, so the command for installing the required target is:
 
  `$ rustup target add thumbv7em-none-eabihf`
-
+### STLink Command Line Tool Installation
+Follow the [ST-Link GitHub page](https://github.com/stlink-org/stlink#:~:text=and%20additional%20info.-,Installation,-Windows%3A) to install the S-Link command line tool.
 
 ### Building and Flashing Blinky
 Once you have the required tooling, test your setup with the blinky example:
 ```
-cargo build --example blinky
-cd target\thumbv7em-none-eabihf\debug\examples
-arm-none-eabi-objcopy -O binary blinky blinky.bin
+cd braincell
+./brainbuild.py --example blinky flash
 ```
-Then flash blinky.bin using ST-Link.
+Brainbuild is the build script tool that builds and flashes the target in one simple command. You can also build with the regular `cargo build` workflow, but you'll have to manually extract the built binary and flash it with ST-Link.
 
 
 ## Important Dependencies
