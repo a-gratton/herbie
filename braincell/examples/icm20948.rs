@@ -52,7 +52,7 @@ fn main() -> ! {
         let sclk = gpiob.pb3.into_alternate();
         let mosi = gpiob.pb5.into_alternate();
         let miso = gpiob.pb4.into_alternate();
-        let mut cs = gpioa.pa10.into_push_pull_output();
+        let mut cs = gpioa.pa4.into_push_pull_output();
         let mut spi = Spi::new(
             dp.SPI1,
             (sclk, miso, mosi),
@@ -64,18 +64,20 @@ fn main() -> ! {
             &clocks,
         );
 
-        writeln!(tx, "Initializing IMU...\r").unwrap();
+        writeln!(tx, "Initializing IMU...").unwrap();
 
         // icm-20948 driver
         let mut imu = icm20948::ICM20948::new(&mut spi, &mut cs);
-        let res = imu.init();
+        let res = imu.init(&mut delay, &mut tx);
         match res {
-            Ok(_) => writeln!(tx, "IMU initialized\r").unwrap(),
+            Ok(_) => writeln!(tx, "IMU initialized").unwrap(),
             Err(e) => {
                 match e {
-                    icm20948::ErrorCode::ParamError => writeln!(tx, "Param Error\r").unwrap(),
-                    icm20948::ErrorCode::SpiError => writeln!(tx, "SPI Error\r").unwrap(),
-                    icm20948::ErrorCode::WrongID => writeln!(tx, "Wrong ID\r").unwrap(),
+                    icm20948::ErrorCode::ParamError => writeln!(tx, "Param Error").unwrap(),
+                    icm20948::ErrorCode::SpiError => writeln!(tx, "SPI Error").unwrap(),
+                    icm20948::ErrorCode::WrongID => writeln!(tx, "Wrong ID").unwrap(),
+                    icm20948::ErrorCode::MagError => writeln!(tx, "Magnetometer Error").unwrap(),
+                    icm20948::ErrorCode::MagWrongID => writeln!(tx, "Magnetometer wrong ID").unwrap(),
                 }
                 panic!();
             }
