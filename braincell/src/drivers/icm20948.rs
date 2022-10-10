@@ -80,7 +80,7 @@ where
         delay.delay_ms(50_u32);
         self.sleep(false)?;
         self.set_low_power(false)?;
-        self.start_magnetometer(delay, tx)?;
+        self.init_mag(delay)?;
 
         // TODO: done minimal setup, add more config here if necessary
         Ok(())
@@ -149,14 +149,13 @@ where
         Ok(())
     }
 
-    fn start_magnetometer<DELAY, TX>(&mut self, delay: &'a mut DELAY, tx: &'a mut TX) -> Result<(), ErrorCode>
+    fn init_mag<DELAY>(&mut self, delay: &'a mut DELAY) -> Result<(), ErrorCode>
     where
         DELAY: _embedded_hal_blocking_delay_DelayMs<u32>,
-        TX: core::fmt::Write,
     {
         self.i2c_master_enable(true)?;
         // Reset mag
-        self.write_mag(delay, tx, RegAddrMag::Cntl3 as u8, 1)?;
+        self.write_mag(delay, RegAddrMag::Cntl3 as u8, 1)?;
 
         // Reset master I2C until the mag responds
         let mut attempts = 0;
@@ -231,14 +230,14 @@ where
         let mut reg = self.read_byte(RegAddrBank0::UserCtrl as u8)?;
 
         // UserCtrl register:
-        // Bits:     |     7    |      6      |     5    |    4    |      3     |     2      |    1    |   0    |
-        // Function: | reserved | I2C_MST_RST | SRAM_RST | DMP_RST | I2C_IF_DIS | I2C_MST_EN | FIFO_EN | DMP_EN |
+        // Bits:     |    7   |    6    |      5     |      4     |    3    |    2     |      1      |     0    |
+        // Function: | DMP_EN | FIFO_EN | I2C_MST_EN | I2C_IF_DIS | DMP_RST | SRAM_RST | I2C_MST_RST | reserved |
 
         // Set I2C_MST_EN bit
         if enable {
-            reg |= 0x04;
+            reg |= 0x20;
         } else {
-            reg &= !0x04;
+            reg &= !0x20;
         }
 
         self.write_byte(RegAddrBank0::UserCtrl as u8, reg)?;
@@ -250,20 +249,19 @@ where
         let mut reg = self.read_byte(RegAddrBank0::UserCtrl as u8)?;
 
         // UserCtrl register:
-        // Bits:     |     7    |      6      |     5    |    4    |      3     |     2      |    1    |   0    |
-        // Function: | reserved | I2C_MST_RST | SRAM_RST | DMP_RST | I2C_IF_DIS | I2C_MST_EN | FIFO_EN | DMP_EN |
+        // Bits:     |    7   |    6    |      5     |      4     |    3    |    2     |      1      |     0    |
+        // Function: | DMP_EN | FIFO_EN | I2C_MST_EN | I2C_IF_DIS | DMP_RST | SRAM_RST | I2C_MST_RST | reserved |
 
         // Set I2C_MST_RST bit
-        reg |= 0x40;
+        reg |= 0x02;
 
         self.write_byte(RegAddrBank0::UserCtrl as u8, reg)?;
         Ok(())
     }
 
-    fn write_mag<DELAY, TX>(&mut self, delay: &'b mut DELAY, tx: &'a mut TX, reg: u8, data: u8) -> Result<(), ErrorCode> 
+    fn write_mag<DELAY>(&mut self, delay: &'b mut DELAY, reg: u8, data: u8) -> Result<(), ErrorCode> 
     where
         DELAY: _embedded_hal_blocking_delay_DelayMs<u32>,
-        TX: core::fmt::Write,
     {
         self.set_bank(3)?;
         self.write_byte(RegAddrBank3::I2CPeriph4Addr as u8, MAG_I2C_ADDR)?;
