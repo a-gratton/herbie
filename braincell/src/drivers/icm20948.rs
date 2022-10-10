@@ -58,7 +58,7 @@ pub struct ICM20948<'a, SPI, const P: char, const N: u8> {
     curr_bank: u8,
 }
 
-impl<'a, SPI, const P: char, const N: u8> ICM20948<'a, SPI, P, N>
+impl<'a, 'b, SPI, const P: char, const N: u8> ICM20948<'a, SPI, P, N>
 where
     SPI: _embedded_hal_blocking_spi_Write<u8> + _embedded_hal_blocking_spi_Transfer<u8>,
 {
@@ -88,8 +88,7 @@ where
 
     fn check_id(&mut self) -> Result<(), ErrorCode> {
         self.set_bank(0)?;
-        let mut bytes: [u8; 2] = [RegAddrBank0::WhoAmI as u8, 0];
-        let whoami = self.read(&mut bytes[..])?[0];
+        let whoami = self.read_byte(RegAddrBank0::WhoAmI as u8)?;
         if whoami != ICM_20948_WHO_AM_I {
             Err(ErrorCode::WrongID)
         } else {
@@ -99,8 +98,7 @@ where
 
     fn sw_reset(&mut self) -> Result<(), ErrorCode> {
         self.set_bank(0)?;
-        let mut bytes: [u8; 2] = [RegAddrBank0::PwrMgmt1 as u8, 0];
-        let mut reg = self.read(&mut bytes[..])?[0];
+        let mut reg = self.read_byte(RegAddrBank0::PwrMgmt1 as u8)?;
 
         // PwrMgmt1 register:
         // Bits:     |       7      |   6   |   5   |     4    |     3    |   2:0  |
@@ -109,15 +107,13 @@ where
         // Set DEVICE_RESET bit
         reg |= 0x80;
 
-        let bytes: [u8; 2] = [RegAddrBank0::PwrMgmt1 as u8, reg];
-        self.write(&bytes)?;
+        self.write_byte(RegAddrBank0::PwrMgmt1 as u8, reg)?;
         Ok(())
     }
 
     fn sleep(&mut self, sleep: bool) -> Result<(), ErrorCode> {
         self.set_bank(0)?;
-        let mut bytes: [u8; 2] = [RegAddrBank0::PwrMgmt1 as u8, 0];
-        let mut reg = self.read(&mut bytes[..])?[0];
+        let mut reg = self.read_byte(RegAddrBank0::PwrMgmt1 as u8)?;
 
         // PwrMgmt1 register:
         // Bits:     |       7      |   6   |   5   |     4    |     3    |   2:0  |
@@ -130,15 +126,13 @@ where
             reg &= !0x40;
         }
 
-        let bytes: [u8; 2] = [RegAddrBank0::PwrMgmt1 as u8, reg];
-        self.write(&bytes)?;
+        self.write_byte(RegAddrBank0::PwrMgmt1 as u8, reg)?;
         Ok(())
     }
 
     fn set_low_power(&mut self, enable: bool) ->Result<(), ErrorCode> {
         self.set_bank(0)?;
-        let mut bytes: [u8; 2] = [RegAddrBank0::PwrMgmt1 as u8, 0];
-        let mut reg = self.read(&mut bytes[..])?[0];
+        let mut reg = self.read_byte(RegAddrBank0::PwrMgmt1 as u8)?;
 
         // PwrMgmt1 register:
         // Bits:     |       7      |   6   |   5   |     4    |     3    |   2:0  |
@@ -151,8 +145,7 @@ where
             reg &= !0x20;
         }
 
-        let bytes: [u8; 2] = [RegAddrBank0::PwrMgmt1 as u8, reg];
-        self.write(&bytes)?;
+        self.write_byte(RegAddrBank0::PwrMgmt1 as u8, reg)?;
         Ok(())
     }
 
@@ -163,7 +156,7 @@ where
     {
         self.i2c_master_enable(true)?;
         // Reset mag
-        self.write_mag(tx, RegAddrMag::Cntl3 as u8, 1)?;
+        self.write_mag(delay, tx, RegAddrMag::Cntl3 as u8, 1)?;
 
         // Reset master I2C until the mag responds
         let mut attempts = 0;
@@ -200,8 +193,7 @@ where
 
     fn i2c_master_passthrough(&mut self, passthrough: bool) -> Result<(), ErrorCode> {
         self.set_bank(0)?;
-        let mut bytes: [u8; 2] = [RegAddrBank0::IntPinConfig as u8, 0];
-        let mut reg = self.read(&mut bytes[..])?[0];
+        let mut reg = self.read_byte(RegAddrBank0::IntPinConfig as u8)?;
 
         // IntPinConfig register:
         // Bits:     |     7     |     6     |        5      |         4        |      3     |          2        |     1     |     0    |
@@ -214,16 +206,14 @@ where
             reg &= !0x02;
         }
 
-        let bytes: [u8; 2] = [RegAddrBank0::IntPinConfig as u8, reg];
-        self.write(&bytes)?;
+        self.write_byte(RegAddrBank0::IntPinConfig as u8, reg)?;
         Ok(())
     }
 
     fn i2c_master_enable(&mut self, enable: bool) -> Result<(), ErrorCode> {
         self.i2c_master_passthrough(false)?; // Do not connect the SDA/SCL pins to AUX_DA/AUX_CL
         self.set_bank(3)?;
-        let mut bytes: [u8; 2] = [RegAddrBank3::I2CMstCtrl as u8, 0];
-        let mut reg = self.read(&mut bytes[..])?[0];
+        let mut reg = self.read_byte(RegAddrBank3::I2CMstCtrl as u8)?;
 
         // I2CMstCtrl register:
         // Bits:     |      7      |    6:5   |       4       |     3:0     |
@@ -235,12 +225,10 @@ where
         // Set I2C_MST_P_NSR bit
         reg |= 0x04;
 
-        let bytes: [u8; 2] = [RegAddrBank3::I2CMstCtrl as u8, reg];
-        self.write(&bytes)?;
+        self.write_byte(RegAddrBank3::I2CMstCtrl as u8, reg)?;
 
         self.set_bank(0)?;
-        let mut bytes: [u8; 2] = [RegAddrBank0::UserCtrl as u8, 0];
-        let mut reg = self.read(&mut bytes[..])?[0];
+        let mut reg = self.read_byte(RegAddrBank0::UserCtrl as u8)?;
 
         // UserCtrl register:
         // Bits:     |     7    |      6      |     5    |    4    |      3     |     2      |    1    |   0    |
@@ -253,15 +241,13 @@ where
             reg &= !0x04;
         }
 
-        let bytes: [u8; 2] = [RegAddrBank0::UserCtrl as u8, reg];
-        self.write(&bytes)?;
+        self.write_byte(RegAddrBank0::UserCtrl as u8, reg)?;
         Ok(())
     }
 
     fn i2c_master_reset(&mut self) -> Result<(), ErrorCode> {
         self.set_bank(0)?;
-        let mut bytes: [u8; 2] = [RegAddrBank0::UserCtrl as u8, 0];
-        let mut reg = self.read(&mut bytes[..])?[0];
+        let mut reg = self.read_byte(RegAddrBank0::UserCtrl as u8)?;
 
         // UserCtrl register:
         // Bits:     |     7    |      6      |     5    |    4    |      3     |     2      |    1    |   0    |
@@ -270,20 +256,18 @@ where
         // Set I2C_MST_RST bit
         reg |= 0x40;
 
-        let bytes: [u8; 2] = [RegAddrBank0::UserCtrl as u8, reg];
-        self.write(&bytes)?;
+        self.write_byte(RegAddrBank0::UserCtrl as u8, reg)?;
         Ok(())
     }
 
-    fn write_mag<TX>(&mut self, tx: &'a mut TX, reg: u8, data: u8) -> Result<(), ErrorCode> 
+    fn write_mag<DELAY, TX>(&mut self, delay: &'b mut DELAY, tx: &'a mut TX, reg: u8, data: u8) -> Result<(), ErrorCode> 
     where
+        DELAY: _embedded_hal_blocking_delay_DelayMs<u32>,
         TX: core::fmt::Write,
     {
         self.set_bank(3)?;
-        let bytes: [u8; 2] = [RegAddrBank3::I2CPeriph4Addr as u8, MAG_I2C_ADDR];
-        self.write(&bytes)?;
-        let bytes: [u8; 2] = [RegAddrBank3::I2CPeriph4Reg as u8, reg];
-        self.write(&bytes)?;
+        self.write_byte(RegAddrBank3::I2CPeriph4Addr as u8, MAG_I2C_ADDR)?;
+        self.write_byte(RegAddrBank3::I2CPeriph4Reg as u8, reg)?;
 
         // Periph4Ctrl register:
         // Bits:     |  7 |    6   |    5    | 4:0 |
@@ -291,10 +275,8 @@ where
 
         let ctrl: u8 = 0x80;
 
-        let bytes: [u8; 2] = [RegAddrBank3::I2CPeriph4DO as u8, data];
-        self.write(&bytes)?;
-        let bytes: [u8; 2] = [RegAddrBank3::I2CPeriph4Ctrl as u8, ctrl];
-        self.write(&bytes)?;
+        self.write_byte(RegAddrBank3::I2CPeriph4DO as u8, data)?;
+        self.write_byte(RegAddrBank3::I2CPeriph4Ctrl as u8, ctrl)?;
 
         let mut peripheral_done: bool = false;
         let mut peripheral_nack: bool = false;
@@ -302,8 +284,7 @@ where
         let mut count = 0; // max count 1000
         while !peripheral_done && count < 1000 {
             self.set_bank(0)?;
-            let mut bytes: [u8; 2] = [RegAddrBank0::I2CMstStatus as u8, 0];
-            let i2c_mst_status = self.read(&mut bytes[..])?[0];
+            let i2c_mst_status = self.read_byte(RegAddrBank0::I2CMstStatus as u8)?;
 
             // I2CMstStatus register:
             // Bits:     |       7      |         6        |       5      |         4        |         3        |         2        |         1        |         0        |
@@ -312,6 +293,7 @@ where
             peripheral_done = (i2c_mst_status & 0x40) != 0;
             peripheral_nack = (i2c_mst_status & 0x10) != 0;
             count += 1;
+            delay.delay_ms(1_u32);
         }
         if !peripheral_done || peripheral_nack {
             return Err(ErrorCode::MagError);
@@ -322,10 +304,8 @@ where
 
     fn read_mag(&mut self, reg: u8) -> Result<u8, ErrorCode> {
         self.set_bank(3)?;
-        let bytes: [u8; 2] = [RegAddrBank3::I2CPeriph4Addr as u8, MAG_I2C_ADDR | 0x80];
-        self.write(&bytes)?;
-        let bytes: [u8; 2] = [RegAddrBank3::I2CPeriph4Reg as u8, reg];
-        self.write(&bytes)?;
+        self.write_byte(RegAddrBank3::I2CPeriph4Addr as u8, MAG_I2C_ADDR | 0x80)?;
+        self.write_byte(RegAddrBank3::I2CPeriph4Reg as u8, reg)?;
 
         // Periph4Ctrl register:
         // Bits:     |  7 |    6   |    5    | 4:0 |
@@ -333,8 +313,7 @@ where
 
         let ctrl: u8 = 0x80;
 
-        let bytes: [u8; 2] = [RegAddrBank3::I2CPeriph4Ctrl as u8, ctrl];
-        self.write(&bytes)?;
+        self.write_byte(RegAddrBank3::I2CPeriph4Ctrl as u8, ctrl)?;
 
         let mut peripheral_done: bool = false;
         let mut peripheral_nack: bool = false;
@@ -342,8 +321,7 @@ where
         let mut count = 0; // max count 1000
         while !peripheral_done && count < 1000 {
             self.set_bank(0)?;
-            let mut bytes: [u8; 2] = [RegAddrBank0::I2CMstStatus as u8, 0];
-            let i2c_mst_status = self.read(&mut bytes[..])?[0];
+            let i2c_mst_status = self.read_byte(RegAddrBank0::I2CMstStatus as u8)?;
 
             // I2CMstStatus register:
             // Bits:     |       7      |         6        |       5      |         4        |         3        |         2        |         1        |         0        |
@@ -358,8 +336,7 @@ where
         }
 
         self.set_bank(3)?;
-        let mut bytes: [u8; 2] = [RegAddrBank3::I2CPeriph4DI as u8, 0];
-        let data = self.read(&mut bytes[..])?[0];
+        let data = self.read_byte(RegAddrBank3::I2CPeriph4DI as u8)?;
 
         Ok(data)
     }
@@ -370,16 +347,15 @@ where
         } else if self.curr_bank == bank {
             Ok(())
         } else {
-            let bytes: [u8; 2] = [RegAddrGeneral::BankSel as u8, (bank << 4) & 0x30];
-            self.write(&bytes)?;
+            self.write_byte(RegAddrGeneral::BankSel as u8, (bank << 4) & 0x30)?;
             self.curr_bank = bank;
             Ok(())
         }
     }
 
-    fn write(&mut self, data: &[u8]) -> Result<(), ErrorCode> {
+    fn write_byte(&mut self, reg: u8, data: u8) -> Result<(), ErrorCode> {
         self.cs.set_low();
-        let res = self.spi_handle.write(data);
+        let res = self.spi_handle.write(&[reg, data][..]);
         self.cs.set_high();
         match res {
             Ok(_) => Ok(()),
@@ -387,13 +363,13 @@ where
         }
     }
 
-    fn read<'w>(&'w mut self, data: &'w mut [u8]) -> Result<&'w [u8], ErrorCode> {
-        data[0] |= 0x80;
+    fn read_byte(&mut self, reg: u8) -> Result<u8, ErrorCode> {
         self.cs.set_low();
-        let res = self.spi_handle.transfer(data);
+        let mut bytes = [reg | 0x80, 0];
+        let res = self.spi_handle.transfer(&mut bytes[..]);
         self.cs.set_high();
         match res {
-            Ok(read_data) => Ok(&read_data[1..]),
+            Ok(data) => Ok(data[1]),
             Err(_) => Err(ErrorCode::SpiError),
         }
     }
