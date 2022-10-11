@@ -19,6 +19,7 @@ enum RegAddrBank0 {
     UserCtrl = 0x03,
     PwrMgmt1 = 0x06,
     IntPinConfig = 0x0F,
+    IntEnable1 = 0x11,
     I2CMstStatus = 0x17,
     IntStatus1 = 0x1A,
     AccelXoutH = 0x2D,
@@ -186,9 +187,10 @@ where
         self.sleep(false)?;
         self.set_low_power(false)?;
         self.init_mag(delay, mag_mode)?;
-        // TODO: set sample mode?
+        // TODO: set sample mode? set sample rate?
         self.config_accel(accel_fss_config, accel_dlpf_config)?;
         self.config_gyro(gyro_fss_config, gyro_dlpf_config)?;
+        self.init_interrupt()?;
         Ok(())
     }
 
@@ -218,43 +220,52 @@ where
         Ok(())
     }
 
+    // x-component of linear acceleration in Mega G's
     pub fn get_accel_x(&mut self) -> f32 {
-        self.get_accel_MG(self.raw_agm.accel.x)
+        self.get_accel_mg(self.raw_agm.accel.x)
     }
 
+    // y-component of linear acceleration in Mega G's
     pub fn get_accel_y(&mut self) -> f32 {
-        self.get_accel_MG(self.raw_agm.accel.y)
+        self.get_accel_mg(self.raw_agm.accel.y)
     }
 
+    // z-component of linear acceleration in Mega G's
     pub fn get_accel_z(&mut self) -> f32 {
-        self.get_accel_MG(self.raw_agm.accel.z)
+        self.get_accel_mg(self.raw_agm.accel.z)
     }
 
+    // x-component of angular velocity in degrees per second
     pub fn get_gyro_x(&mut self) -> f32 {
         self.get_gyro_dps(self.raw_agm.gyro.x)
     }
 
+    // y-component of angular velocity in degrees per second
     pub fn get_gyro_y(&mut self) -> f32 {
         self.get_gyro_dps(self.raw_agm.gyro.y)
     }
 
+    // z-component of angular velocity in degrees per second
     pub fn get_gyro_z(&mut self) -> f32 {
         self.get_gyro_dps(self.raw_agm.gyro.z)
     }
 
+    // x-component of magnetic heading in micro Teslas
     pub fn get_mag_x(&mut self) -> f32 {
-        self.get_mag_uT(self.raw_agm.mag.x)
+        self.get_mag_ut(self.raw_agm.mag.x)
     }
 
+    // y-component of magnetic heading in micro Teslas
     pub fn get_mag_y(&mut self) -> f32 {
-        self.get_mag_uT(self.raw_agm.mag.y)
+        self.get_mag_ut(self.raw_agm.mag.y)
     }
 
+    // z-component of magnetic heading in micro Teslas
     pub fn get_mag_z(&mut self) -> f32 {
-        self.get_mag_uT(self.raw_agm.mag.z)
+        self.get_mag_ut(self.raw_agm.mag.z)
     }
 
-    fn get_accel_MG(&mut self, raw: i16) -> f32 {
+    fn get_accel_mg(&mut self, raw: i16) -> f32 {
         match self.fss_config.accel {
             AccelFullScaleSel::Gpm2 => (raw as f32) / 16.384,
             AccelFullScaleSel::Gpm4 => (raw as f32) / 8.192,
@@ -272,7 +283,7 @@ where
         }
     }
 
-    fn get_mag_uT(&mut self, raw: i16) -> f32 {
+    fn get_mag_ut(&mut self, raw: i16) -> f32 {
         (raw as f32) * MAG_SCALE
     }
 
@@ -389,6 +400,34 @@ where
         Ok(())
     }
 
+    fn init_interrupt(&mut self) -> Result<(), ErrorCode> {
+        self.set_bank(0)?;
+        let mut config = self.read_byte(RegAddrBank0::IntPinConfig as u8)?;
+
+        // IntPinConfig register:
+        // Bits:     |     7     |     6     |        5      |         4        |      3     |          2        |     1     |     0    |
+        // Function: | INT1_ACTL | INT1_OPEN | INT1_LATCH_EN | INT_ANYRD_2CLEAR | ACTL_FSYNC | FSYNC_INT_MODE_EN | BYPASS_EN | reserved |
+
+        config |= 0x80; // Configure active low by setting INT1_ACTL bit to 1
+        config &= !0x40; // Configure push-pull by setting INT1_OPEN bit to 0
+        config |= 0x20; // Configure latch by setting INT1_LATCH_EN bit to 1
+        config |= 0x10; // Configure clear interrupt by any read operation by setting INT_ANYRD_2CLEAR bit to 1
+
+        self.write_byte(RegAddrBank0::IntPinConfig as u8, config)?;
+
+        let mut int_enable = self.read_byte(RegAddrBank0::IntEnable1 as u8)?;
+
+        // IntEnable1 register:
+        // Bits:      |    7:1   |         0         |
+        // Function:  | reserved | RAW_DATA_0_RDY_EN |
+
+        // Set RAW_DATA_0_RDY_EN bit
+        int_enable |= 0x01;
+
+        self.write_byte(RegAddrBank0::IntEnable1 as u8, int_enable)?;
+        Ok(())
+    }
+
     fn init_mag<DELAY>(&mut self, delay: &mut DELAY, mode: MagMode) -> Result<(), ErrorCode>
     where
         DELAY: _embedded_hal_blocking_delay_DelayMs<u32>,
@@ -452,7 +491,7 @@ where
         // IntPinConfig register:
         // Bits:     |     7     |     6     |        5      |         4        |      3     |          2        |     1     |     0    |
         // Function: | INT1_ACTL | INT1_OPEN | INT1_LATCH_EN | INT_ANYRD_2CLEAR | ACTL_FSYNC | FSYNC_INT_MODE_EN | BYPASS_EN | reserved |
-    
+
         // Set BYPASS_EN bit
         if passthrough {
             reg |= 0x02;
