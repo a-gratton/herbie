@@ -68,7 +68,7 @@ fn main() -> ! {
 
         // icm-20948 driver
         let mut imu = icm20948::ICM20948::new(&mut spi, &mut cs);
-        let res = imu.init(&mut delay, &mut tx);
+        let res = imu.init(&mut delay, icm20948::AccelFullScaleSel::Gpm2, icm20948::AccelDLPFSel::Disable, icm20948::GyroFullScaleSel::Dps250, icm20948::GyroDLPFSel::Disable, icm20948::MagMode::Continuous100Hz);
         match res {
             Ok(_) => writeln!(tx, "IMU initialized").unwrap(),
             Err(e) => {
@@ -84,7 +84,25 @@ fn main() -> ! {
         }
 
         loop {
-            delay.delay_ms(1000_u32);
+            match imu.data_ready() {
+                Ok(data_ready) => {
+                    if data_ready {
+                        let _ = imu.read_data();
+                        let accel_x = imu.get_accel_x();
+                        let accel_y = imu.get_accel_y();
+                        let accel_z = imu.get_accel_z();
+                        let gyro_x = imu.get_gyro_x();
+                        let gyro_y = imu.get_gyro_y();
+                        let gyro_z = imu.get_gyro_z();
+                        let mag_x = imu.get_mag_x();
+                        let mag_y = imu.get_mag_y();
+                        let mag_z = imu.get_mag_z();
+                        writeln!(tx, "Accel (MG): [{:.2}, {:.2}, {:.2}], Gyro (dps): [{:.2}, {:.2}, {:.2}], Mag (uT): [{:.2}, {:.2}, {:.2}]", accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z).unwrap()
+                    }
+                },
+                Err(_) => writeln!(tx, "error in data_ready()").unwrap(),
+            }
+            delay.delay_ms(100_u32);
         }
     }
 

@@ -1,4 +1,6 @@
 // ICM-20948 IMU driver
+// Datasheet: https://invensense.tdk.com/wp-content/uploads/2021/10/DS-000189-ICM-20948-v1.5.pdf
+// Ported from this Arduino driver: https://github.com/sparkfun/SparkFun_ICM-20948_ArduinoLibrary
 
 use stm32f4xx_hal::{
     prelude::{_embedded_hal_blocking_spi_Write, _embedded_hal_blocking_spi_Transfer, _embedded_hal_blocking_delay_DelayMs},
@@ -18,11 +20,22 @@ enum RegAddrBank0 {
     PwrMgmt1 = 0x06,
     IntPinConfig = 0x0F,
     I2CMstStatus = 0x17,
+    IntStatus1 = 0x1A,
+    AccelXoutH = 0x2D,
+}
+
+#[repr(u8)]
+enum RegAddrBank2 {
+    GyroConfig1 = 0x01,
+    AccelConfig = 0x14,
 }
 
 #[repr(u8)]
 enum RegAddrBank3 {
     I2CMstCtrl = 0x01,
+    I2CPeriph0Addr = 0x03,
+    I2CPeriph0Reg = 0x04,
+    I2CPeriph0Ctrl = 0x05,
     I2CPeriph4Addr = 0x13,
     I2CPeriph4Reg = 0x14,
     I2CPeriph4Ctrl = 0x15,
@@ -34,7 +47,73 @@ enum RegAddrBank3 {
 enum RegAddrMag {
     WIA1 = 0x00,
     WIA2 = 0x01,
+    ST1 = 0x10,
+    Cntl12 = 0x31,
     Cntl3 = 0x32,
+}
+
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum MagMode {
+  PowerDown = 0x00,
+  Single = 0x01 << 0,
+  Continuous10Hz = 0x01 << 1,
+  Continuous20Hz = 0x02 << 1,
+  Continuous50Hz = 0x03 << 1,
+  Continuous100Hz = 0x04 << 1,
+  SelfTest = 0x01 << 4,
+}
+
+// Gyro full scale range in degrees per second
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum GyroFullScaleSel {
+    Dps250 = 0x00,
+    Dps500 = 0x01,
+    Dps1000 = 0x02,
+    Dps2000 = 0x03,
+}
+
+// Gyro digital low pass filter config
+// Format is dAbwB_nXbwY - A is integer part of 3db BW, B is fraction. X is integer part of nyquist bandwidth, Y is fraction
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum GyroDLPFSel {
+    D196bw6N229bw8 = 0x00,
+    D151bw8N187bw6 = 0x01,
+    D119bw5N154bw3 = 0x02,
+    D51bw2N73bw3 = 0x03,
+    D23bw9N35bw9 = 0x04,
+    D11bw6N17bw8 = 0x05,
+    D5bw7N8bw9 = 0x06,
+    D361bw4N376bw5 = 0x07,
+    Disable = 0xFF,
+}
+
+// Accel full scale range in G's (plus or minus)
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum AccelFullScaleSel {
+    Gpm2 = 0x00,
+    Gpm4 = 0x01,
+    Gpm8 = 0x02,
+    Gpm16 = 0x03,
+}
+
+// Accel digital low pass filter config
+// Format is dAbwB_nXbwZ - A is integer part of 3db BW, B is fraction. X is integer part of nyquist bandwidth, Y is fraction
+#[repr(u8)]
+#[derive(Copy, Clone)]
+pub enum AccelDLPFSel {
+  D246bwN265bw = 0x00,
+  D246bwN265bw1 = 0x01,
+  D111bw4N136bw = 0x02,
+  D50bw4N68bw8 = 0x03,
+  D23bw9N34bw4 = 0x04,
+  D11bw5N17bw = 0x05,
+  D5bw7N8bw3 = 0x06,
+  D473bwN499bw = 0x07,
+  Disable = 0xFF,
 }
 
 // Constants
@@ -42,6 +121,8 @@ const ICM_20948_WHO_AM_I: u8 = 0xEA;
 const MAG_I2C_ADDR: u8 = 0x0C;
 const MAG_WHO_AM_I: u16 = 0x4809;
 const MAX_MAGNETOMETER_STARTS: u32 = 10;
+const RAW_DATA_NUM_BYTES: usize = 23;
+const MAG_SCALE: f32 = 0.15;
 
 // Error codes
 pub enum ErrorCode {
@@ -52,13 +133,36 @@ pub enum ErrorCode {
     MagWrongID,
 }
 
+#[derive(Default)]
+struct Axes {
+    x: i16,
+    y: i16,
+    z: i16,
+}
+
+#[derive(Default)]
+struct AGMData {
+    accel: Axes,
+    gyro: Axes,
+    mag: Axes,
+    mag_stat1: u8,
+    mag_stat2: u8,
+}
+
+struct FssConfig {
+    accel: AccelFullScaleSel,
+    gyro: GyroFullScaleSel,
+}
+
 pub struct ICM20948<'a, SPI, const P: char, const N: u8> {
     spi_handle: &'a mut SPI,
     cs: &'a mut Pin<P, N, Output<PushPull>>,
     curr_bank: u8,
+    raw_agm: AGMData,
+    fss_config: FssConfig,
 }
 
-impl<'a, 'b, SPI, const P: char, const N: u8> ICM20948<'a, SPI, P, N>
+impl<'a, SPI, const P: char, const N: u8> ICM20948<'a, SPI, P, N>
 where
     SPI: _embedded_hal_blocking_spi_Write<u8> + _embedded_hal_blocking_spi_Transfer<u8>,
 {
@@ -67,23 +171,109 @@ where
             spi_handle,
             cs,
             curr_bank: 255,
+            raw_agm: AGMData::default(),
+            fss_config: FssConfig{accel: AccelFullScaleSel::Gpm2, gyro: GyroFullScaleSel::Dps250}
         }
     }
 
-    pub fn init<DELAY, TX>(&mut self, delay: &'a mut DELAY, tx: &'a mut TX) -> Result<(), ErrorCode>
+    pub fn init<DELAY>(&mut self, delay: &mut DELAY, accel_fss_config: AccelFullScaleSel, accel_dlpf_config: AccelDLPFSel, gyro_fss_config: GyroFullScaleSel, gyro_dlpf_config: GyroDLPFSel, mag_mode: MagMode) -> Result<(), ErrorCode>
     where
         DELAY: _embedded_hal_blocking_delay_DelayMs<u32>,
-        TX: core::fmt::Write,
     {
         self.check_id()?;
         self.sw_reset()?;
         delay.delay_ms(50_u32);
         self.sleep(false)?;
         self.set_low_power(false)?;
-        self.init_mag(delay)?;
-
-        // TODO: done minimal setup, add more config here if necessary
+        self.init_mag(delay, mag_mode)?;
+        // TODO: set sample mode?
+        self.config_accel(accel_fss_config, accel_dlpf_config)?;
+        self.config_gyro(gyro_fss_config, gyro_dlpf_config)?;
         Ok(())
+    }
+
+    pub fn data_ready(&mut self) -> Result<bool, ErrorCode> {
+        self.set_bank(0)?;
+        let data_ready = self.read_byte(RegAddrBank0::IntStatus1 as u8)?;
+        let data_ready: bool = (data_ready & 0x01) == 1;
+        Ok(data_ready)
+    }
+
+    pub fn read_data(&mut self) -> Result<(), ErrorCode> {
+        self.set_bank(0)?;
+        let mut bytes: [u8; RAW_DATA_NUM_BYTES+1] = [0; RAW_DATA_NUM_BYTES+1];
+        bytes[0] = RegAddrBank0::AccelXoutH as u8;
+        let buf = self.read_bytes(&mut bytes[..])?;
+        self.raw_agm.accel.x = (((buf[0] as u16) << 8) | buf[1] as u16) as i16;
+        self.raw_agm.accel.y = (((buf[2] as u16) << 8) | buf[3] as u16) as i16;
+        self.raw_agm.accel.z = (((buf[4] as u16) << 8) | buf[5] as u16) as i16;
+        self.raw_agm.gyro.x = (((buf[6] as u16) << 8) | buf[7] as u16) as i16;
+        self.raw_agm.gyro.y = (((buf[8] as u16) << 8) | buf[9] as u16) as i16;
+        self.raw_agm.gyro.z = (((buf[10] as u16) << 8) | buf[11] as u16) as i16;
+        self.raw_agm.mag_stat1 = buf[14];
+        self.raw_agm.mag.x = (((buf[16] as u16) << 8) | buf[15] as u16) as i16;
+        self.raw_agm.mag.y = (((buf[18] as u16) << 8) | buf[17] as u16) as i16;
+        self.raw_agm.mag.z = (((buf[20] as u16) << 8) | buf[19] as u16) as i16;
+        self.raw_agm.mag_stat2 = buf[22];
+        Ok(())
+    }
+
+    pub fn get_accel_x(&mut self) -> f32 {
+        self.get_accel_MG(self.raw_agm.accel.x)
+    }
+
+    pub fn get_accel_y(&mut self) -> f32 {
+        self.get_accel_MG(self.raw_agm.accel.y)
+    }
+
+    pub fn get_accel_z(&mut self) -> f32 {
+        self.get_accel_MG(self.raw_agm.accel.z)
+    }
+
+    pub fn get_gyro_x(&mut self) -> f32 {
+        self.get_gyro_dps(self.raw_agm.gyro.x)
+    }
+
+    pub fn get_gyro_y(&mut self) -> f32 {
+        self.get_gyro_dps(self.raw_agm.gyro.y)
+    }
+
+    pub fn get_gyro_z(&mut self) -> f32 {
+        self.get_gyro_dps(self.raw_agm.gyro.z)
+    }
+
+    pub fn get_mag_x(&mut self) -> f32 {
+        self.get_mag_uT(self.raw_agm.mag.x)
+    }
+
+    pub fn get_mag_y(&mut self) -> f32 {
+        self.get_mag_uT(self.raw_agm.mag.y)
+    }
+
+    pub fn get_mag_z(&mut self) -> f32 {
+        self.get_mag_uT(self.raw_agm.mag.z)
+    }
+
+    fn get_accel_MG(&mut self, raw: i16) -> f32 {
+        match self.fss_config.accel {
+            AccelFullScaleSel::Gpm2 => (raw as f32) / 16.384,
+            AccelFullScaleSel::Gpm4 => (raw as f32) / 8.192,
+            AccelFullScaleSel::Gpm8 => (raw as f32) / 4.096,
+            AccelFullScaleSel::Gpm16 => (raw as f32) / 2.048,
+        }
+    }
+
+    fn get_gyro_dps(&mut self, raw: i16) -> f32 {
+        match self.fss_config.gyro {
+            GyroFullScaleSel::Dps250 => (raw as f32) / 131.0,
+            GyroFullScaleSel::Dps500 => (raw as f32) / 65.5,
+            GyroFullScaleSel::Dps1000 => (raw as f32) / 32.8,
+            GyroFullScaleSel::Dps2000 => (raw as f32) / 16.4,
+        }
+    }
+
+    fn get_mag_uT(&mut self, raw: i16) -> f32 {
+        (raw as f32) * MAG_SCALE
     }
 
     fn check_id(&mut self) -> Result<(), ErrorCode> {
@@ -149,7 +339,57 @@ where
         Ok(())
     }
 
-    fn init_mag<DELAY>(&mut self, delay: &'a mut DELAY) -> Result<(), ErrorCode>
+    fn config_accel(&mut self, fss_config: AccelFullScaleSel, dlpf_config: AccelDLPFSel) -> Result<(), ErrorCode> {
+        self.set_bank(2)?;
+        let mut config = self.read_byte(RegAddrBank2::AccelConfig as u8)?;
+
+        // AccelConfig register:
+        // Bits:     |    7:6   |       5:3     |      2:1     |       0       |
+        // Function: | reserved | ACCEL_DLPFCFG | ACCEL_FS_SEL | ACCEL_FCHOICE |
+
+        // Configure DLPF
+        if matches!(dlpf_config, AccelDLPFSel::Disable) {
+            config &= 0b1111_1110;
+        } else {
+            config &= 0b1100_0111;
+            config |= ((dlpf_config as u8) << 3) | 1;
+        }
+
+        // Configure FS
+        config &= 0b1111_1001;
+        config |= (fss_config as u8) << 1;
+
+        self.write_byte(RegAddrBank2::AccelConfig as u8, config)?;
+        self.fss_config.accel = fss_config;
+        Ok(())
+    }
+
+    fn config_gyro(&mut self, fss_config: GyroFullScaleSel, dlpf_config: GyroDLPFSel) -> Result<(), ErrorCode> {
+        self.set_bank(2)?;
+        let mut config = self.read_byte(RegAddrBank2::AccelConfig as u8)?;
+
+        // GyroConfig1 register:
+        // Bits:     |    7:6   |      5:3     |     2:1     |       0      |
+        // Function: | reserved | GYRO_DLPFCFG | GYRO_FS_SEL | GYRO_FCHOICE |
+
+        // Configure DLPF
+        if matches!(dlpf_config, GyroDLPFSel::Disable) {
+            config &= 0b1111_1110;
+        } else {
+            config &= 0b1100_0111;
+            config |= ((dlpf_config as u8) << 3) | 1;
+        }
+
+        // Configure FS
+        config &= 0b1111_1001;
+        config |= (fss_config as u8) << 1;
+
+        self.write_byte(RegAddrBank2::GyroConfig1 as u8, config)?;
+        self.fss_config.gyro = fss_config;
+        Ok(())
+    }
+
+    fn init_mag<DELAY>(&mut self, delay: &mut DELAY, mode: MagMode) -> Result<(), ErrorCode>
     where
         DELAY: _embedded_hal_blocking_delay_DelayMs<u32>,
     {
@@ -177,7 +417,22 @@ where
             return Err(ErrorCode::MagError);
         }
 
-        // TODO: done minimal setup of mag, add more config here if necessary
+        // Configure mag mode
+        self.write_mag(delay, RegAddrMag::Cntl12 as u8, mode as u8)?;
+
+        // Configure mag peripheral
+        self.set_bank(3)?;
+        let periph_addr: u8 = (1 << 7) | MAG_I2C_ADDR;
+        self.write_byte(RegAddrBank3::I2CPeriph0Addr as u8, periph_addr)?; // Peripheral address
+        self.write_byte(RegAddrBank3::I2CPeriph0Reg as u8, RegAddrMag::ST1 as u8)?; // Peripheral register
+
+        // Periph0Ctrl register:
+        // Bits:     |  7 |    6    |    5    |  4  |  3:0 |
+        // Function: | EN | BYTE_SW | REG_DIS | GRP | LENG |
+
+        let cntl: u8 = 0b1000_1001; // Enable + length of 9 bytes
+        self.write_byte(RegAddrBank3::I2CPeriph0Ctrl as u8, cntl)?; // Peripheral control
+
         Ok(())
     }
 
@@ -259,7 +514,7 @@ where
         Ok(())
     }
 
-    fn write_mag<DELAY>(&mut self, delay: &'b mut DELAY, reg: u8, data: u8) -> Result<(), ErrorCode> 
+    fn write_mag<DELAY>(&mut self, delay: &mut DELAY, reg: u8, data: u8) -> Result<(), ErrorCode> 
     where
         DELAY: _embedded_hal_blocking_delay_DelayMs<u32>,
     {
@@ -368,6 +623,17 @@ where
         self.cs.set_high();
         match res {
             Ok(data) => Ok(data[1]),
+            Err(_) => Err(ErrorCode::SpiError),
+        }
+    }
+
+    fn read_bytes<'w>(&mut self, data: &'w mut [u8]) -> Result<&'w [u8], ErrorCode> {
+        data[0] |= 0x80;
+        self.cs.set_low();
+        let res = self.spi_handle.transfer(data);
+        self.cs.set_high();
+        match res {
+            Ok(read_data) => Ok(&read_data[1..]),
             Err(_) => Err(ErrorCode::SpiError),
         }
     }
