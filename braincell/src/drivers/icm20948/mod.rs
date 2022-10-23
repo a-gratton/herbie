@@ -2,8 +2,9 @@
 // Datasheet: https://invensense.tdk.com/wp-content/uploads/2021/10/DS-000189-ICM-20948-v1.5.pdf
 // Ported from this Arduino driver: https://github.com/sparkfun/SparkFun_ICM-20948_ArduinoLibrary
 
+use cortex_m::asm;
 use stm32f4xx_hal::{
-    prelude::{_embedded_hal_blocking_spi_Write, _embedded_hal_blocking_spi_Transfer, _embedded_hal_blocking_delay_DelayMs},
+    prelude::{_embedded_hal_blocking_spi_Write, _embedded_hal_blocking_spi_Transfer},
     gpio::{Pin, Output, PushPull},
 };
 
@@ -21,6 +22,7 @@ enum RegAddrBank0 {
     IntPinConfig = 0x0F,
     IntEnable1 = 0x11,
     I2CMstStatus = 0x17,
+    IntStatus = 0x19,
     IntStatus1 = 0x1A,
     AccelXoutH = 0x2D,
 }
@@ -155,19 +157,19 @@ struct FssConfig {
     gyro: GyroFullScaleSel,
 }
 
-pub struct ICM20948<'a, SPI, const P: char, const N: u8> {
-    spi_handle: &'a mut SPI,
-    cs: &'a mut Pin<P, N, Output<PushPull>>,
+pub struct ICM20948<SPI, const P: char, const N: u8> {
+    spi_handle: SPI,
+    cs: Pin<P, N, Output<PushPull>>,
     curr_bank: u8,
     raw_agm: AGMData,
     fss_config: FssConfig,
 }
 
-impl<'a, SPI, const P: char, const N: u8> ICM20948<'a, SPI, P, N>
+impl<SPI, const P: char, const N: u8> ICM20948<SPI, P, N>
 where
     SPI: _embedded_hal_blocking_spi_Write<u8> + _embedded_hal_blocking_spi_Transfer<u8>,
 {
-    pub fn new(spi_handle: &'a mut SPI, cs: &'a mut Pin<P, N, Output<PushPull>>) -> Self {
+    pub fn new(spi_handle: SPI, cs: Pin<P, N, Output<PushPull>>) -> Self {
         Self {
             spi_handle,
             cs,
@@ -177,16 +179,30 @@ where
         }
     }
 
-    pub fn init<DELAY>(&mut self, delay: &mut DELAY, accel_fss_config: AccelFullScaleSel, accel_dlpf_config: AccelDLPFSel, gyro_fss_config: GyroFullScaleSel, gyro_dlpf_config: GyroDLPFSel, mag_mode: MagMode) -> Result<(), ErrorCode>
-    where
-        DELAY: _embedded_hal_blocking_delay_DelayMs<u32>,
+    pub fn init(&mut self, accel_fss_config: AccelFullScaleSel, accel_dlpf_config: AccelDLPFSel, gyro_fss_config: GyroFullScaleSel, gyro_dlpf_config: GyroDLPFSel, mag_mode: MagMode) -> Result<(), ErrorCode>
     {
         self.check_id()?;
         self.sw_reset()?;
-        delay.delay_ms(50_u32);
+        asm::delay(100_000);
         self.sleep(false)?;
         self.set_low_power(false)?;
-        self.init_mag(delay, mag_mode)?;
+        
+        let mut attempts = 0;
+        let mut mag_error: ErrorCode = ErrorCode::MagError;
+        while attempts < MAX_MAGNETOMETER_STARTS {
+            attempts += 1;
+            match self.init_mag(mag_mode) {
+                Ok(_) => break,
+                Err(err) => {
+                    mag_error = err;
+                    asm::delay(100_000);
+                },
+            }
+        }
+        if attempts == MAX_MAGNETOMETER_STARTS {
+            return Err(mag_error);
+        }
+
         // TODO: set sample mode? set sample rate?
         self.config_accel(accel_fss_config, accel_dlpf_config)?;
         self.config_gyro(gyro_fss_config, gyro_dlpf_config)?;
@@ -199,6 +215,13 @@ where
         let data_ready = self.read_byte(RegAddrBank0::IntStatus1 as u8)?;
         let data_ready: bool = (data_ready & 0x01) == 1;
         Ok(data_ready)
+    }
+
+    pub fn clear_interrupts(&mut self) -> Result<(), ErrorCode> {
+        self.set_bank(0)?;
+        let _ = self.read_byte(RegAddrBank0::IntStatus as u8)?;
+        let _ = self.read_byte(RegAddrBank0::IntStatus1 as u8)?;
+        Ok(())
     }
 
     pub fn read_data(&mut self) -> Result<(), ErrorCode> {
@@ -377,7 +400,7 @@ where
 
     fn config_gyro(&mut self, fss_config: GyroFullScaleSel, dlpf_config: GyroDLPFSel) -> Result<(), ErrorCode> {
         self.set_bank(2)?;
-        let mut config = self.read_byte(RegAddrBank2::AccelConfig as u8)?;
+        let mut config = self.read_byte(RegAddrBank2::GyroConfig1 as u8)?;
 
         // GyroConfig1 register:
         // Bits:     |    7:6   |      5:3     |     2:1     |       0      |
@@ -409,8 +432,8 @@ where
         // Function: | INT1_ACTL | INT1_OPEN | INT1_LATCH_EN | INT_ANYRD_2CLEAR | ACTL_FSYNC | FSYNC_INT_MODE_EN | BYPASS_EN | reserved |
 
         config |= 0x80; // Configure active low by setting INT1_ACTL bit to 1
-        config &= !0x40; // Configure push-pull by setting INT1_OPEN bit to 0
-        config |= 0x20; // Configure latch by setting INT1_LATCH_EN bit to 1
+        config |= 0x40; // Configure open drain by setting INT1_OPEN bit to 1
+        config &= !0x20; // Configure interrupt pulse width to 50us by setting INT1_LATCH_EN bit to 0
         config |= 0x10; // Configure clear interrupt by any read operation by setting INT_ANYRD_2CLEAR bit to 1
 
         self.write_byte(RegAddrBank0::IntPinConfig as u8, config)?;
@@ -428,13 +451,10 @@ where
         Ok(())
     }
 
-    fn init_mag<DELAY>(&mut self, delay: &mut DELAY, mode: MagMode) -> Result<(), ErrorCode>
-    where
-        DELAY: _embedded_hal_blocking_delay_DelayMs<u32>,
-    {
+    fn init_mag(&mut self, mode: MagMode) -> Result<(), ErrorCode> {
         self.i2c_master_enable(true)?;
         // Reset mag
-        self.write_mag(delay, RegAddrMag::Cntl3 as u8, 1)?;
+        self.write_mag(RegAddrMag::Cntl3 as u8, 1)?;
 
         // Reset master I2C until the mag responds
         let mut attempts = 0;
@@ -447,7 +467,7 @@ where
                         return Err(ErrorCode::MagWrongID);
                     } else {
                         self.i2c_master_reset()?;
-                        delay.delay_ms(10_u32);
+                        asm::delay(100_000);
                     }
                 }
             }
@@ -457,7 +477,7 @@ where
         }
 
         // Configure mag mode
-        self.write_mag(delay, RegAddrMag::Cntl12 as u8, mode as u8)?;
+        self.write_mag(RegAddrMag::Cntl12 as u8, mode as u8)?;
 
         // Configure mag peripheral
         self.set_bank(3)?;
@@ -553,10 +573,7 @@ where
         Ok(())
     }
 
-    fn write_mag<DELAY>(&mut self, delay: &mut DELAY, reg: u8, data: u8) -> Result<(), ErrorCode> 
-    where
-        DELAY: _embedded_hal_blocking_delay_DelayMs<u32>,
-    {
+    fn write_mag(&mut self, reg: u8, data: u8) -> Result<(), ErrorCode> {
         self.set_bank(3)?;
         self.write_byte(RegAddrBank3::I2CPeriph4Addr as u8, MAG_I2C_ADDR)?;
         self.write_byte(RegAddrBank3::I2CPeriph4Reg as u8, reg)?;
@@ -585,7 +602,6 @@ where
             peripheral_done = (i2c_mst_status & 0x40) != 0;
             peripheral_nack = (i2c_mst_status & 0x10) != 0;
             count += 1;
-            delay.delay_ms(1_u32);
         }
         if !peripheral_done || peripheral_nack {
             return Err(ErrorCode::MagError);
