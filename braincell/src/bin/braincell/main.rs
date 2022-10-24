@@ -16,10 +16,10 @@ mod app {
     use stm32f4xx_hal::{
         gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5, PB8, PB9},
         i2c::{I2c, Mode as i2cMode},
-        pac::{I2C1, SPI1, USART2},
+        pac::{I2C1, SPI1, USART2, TIM1},
         prelude::*,
         serial::{Config, Serial, Tx},
-        spi::{Mode, Phase, Polarity, Spi},
+        spi::{Mode, Phase, Polarity, Spi}, timer::PwmChannel,
     };
     use systick_monotonic::{fugit::Duration, Systick};
 
@@ -32,6 +32,7 @@ mod app {
     #[local]
     struct Local {
         i2c: I2c<I2C1, (PB8, PB9)>,
+        pwm: PwmChannel<TIM1, 0>,
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9>,
         tof_left: vl53l1x::VL53L1<I2C1, PB8, PB9>,
