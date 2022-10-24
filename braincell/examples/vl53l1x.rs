@@ -3,14 +3,11 @@
 
 // Halt on panic
 use panic_halt as _; // panic handler
-mod config;
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
 mod app {
-    use crate::config::sys_config;
     use braincell::drivers::tof::vl53l1x;
     use core::fmt::Write;
-    use cortex_m::asm;
     use stm32f4xx_hal::{
         gpio::{PB8, PB9},
         i2c::{I2c, Mode as i2cMode},
@@ -27,8 +24,7 @@ mod app {
     struct Local {
         i2c: I2c<I2C1, (PB8, PB9)>,
         tx: Tx<USART2>,
-        tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9>,
-        tof_left: vl53l1x::VL53L1<I2C1, PB8, PB9>,
+        tof: vl53l1x::VL53L1<I2C1, PB8, PB9>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -68,61 +64,43 @@ mod app {
         )
         .unwrap();
 
-        // set up ToF sensors
-        let tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9> =
-            match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_FRONT_ADDRESS) {
-                Ok(val) => val,
-                Err(_) => {
-                    writeln!(tx, "tof_front initialization failed\r").unwrap();
-                    panic!("tof_front initialization failed");
-                }
-            };
-        if let Err(_) = tof_front.start_ranging(
+        // set up ToF sensor
+        let tof: vl53l1x::VL53L1<I2C1, PB8, PB9> = match vl53l1x::VL53L1::new(&mut i2c, 0x42) {
+            Ok(val) => val,
+            Err(_) => {
+                writeln!(tx, "tof initialization failed\r").unwrap();
+                panic!("tof initialization failed");
+            }
+        };
+        if let Err(_) = tof.start_ranging(
             &mut i2c,
             Some(vl53l1x::DistanceMode::Short),
             Some(vl53l1x::TimingBudget::Tb15ms),
             Some(20),
         ) {
-            writeln!(tx, "error starting tof_front ranging").unwrap();
-            panic!("tof_front start_ranging failed");
-        }
-
-        let tof_left: vl53l1x::VL53L1<I2C1, PB8, PB9> =
-            match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_LEFT_ADDRESS) {
-                Ok(val) => val,
-                Err(_) => {
-                    writeln!(tx, "tof_left initialization failed\r").unwrap();
-                    panic!("tof_front initialization failed");
-                }
-            };
-        if let Err(_) = tof_left.start_ranging(
-            &mut i2c,
-            Some(vl53l1x::DistanceMode::Short),
-            Some(vl53l1x::TimingBudget::Tb15ms),
-            Some(20),
-        ) {
-            writeln!(tx, "error starting tof_left ranging").unwrap();
-            panic!("tof_left start_ranging failed");
+            writeln!(tx, "error starting tof ranging").unwrap();
         }
 
         writeln!(tx, "system initialized\r").unwrap();
-
-        (
-            Shared {},
-            Local {
-                i2c,
-                tx,
-                tof_front,
-                tof_left,
-            },
-            init::Monotonics(mono),
-        )
+        print_tof_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+        (Shared {}, Local { i2c, tx, tof }, init::Monotonics(mono))
     }
 
-    #[idle]
-    fn idle(_ctx: idle::Context) -> ! {
-        loop {
-            asm::nop();
+    #[task(local=[i2c, tx, tof], shared=[])]
+    fn print_tof_data(cx: print_tof_data::Context) {
+        if cx
+            .local
+            .tof
+            .check_for_data_ready(cx.local.i2c)
+            .unwrap_or(false)
+        {
+            let x: u16 = cx.local.tof.get_distance(cx.local.i2c).unwrap_or(0);
+            writeln!(cx.local.tx, "distance: {x}\r").unwrap();
+            if let Err(_) = cx.local.tof.clear_interrupt(cx.local.i2c) {
+                writeln!(cx.local.tx, "error clearing interrupt").unwrap();
+            };
         }
+        // run at 100 Hz
+        print_tof_data::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
     }
 }
