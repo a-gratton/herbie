@@ -11,6 +11,7 @@ pub enum DistanceMode {
 }
 
 pub enum TimingBudget {
+    TbError = 0,
     Tb15ms = 15,
     Tb20ms = 20,
     Tb33ms = 33,
@@ -233,6 +234,7 @@ where
                         self.write_word(i2c, RANGE_CONFIG__TIMEOUT_MACROP_A_HI, 0x0591)?;
                         self.write_word(i2c, RANGE_CONFIG__TIMEOUT_MACROP_B_HI, 0x05C1)?;
                     }
+                    TimingBudget::TbError => {}
                 })
             }
             DistanceMode::Long => Ok(match timing_budget {
@@ -262,6 +264,7 @@ where
                     self.write_word(i2c, RANGE_CONFIG__TIMEOUT_MACROP_A_HI, 0x048F)?;
                     self.write_word(i2c, RANGE_CONFIG__TIMEOUT_MACROP_B_HI, 0x04A4)?;
                 }
+                TimingBudget::TbError => {}
             }),
         }
     }
@@ -285,7 +288,7 @@ where
                 0x02D9 => TimingBudget::Tb200ms,
                 0x0591 => TimingBudget::Tb500ms,
                 0x048F => TimingBudget::Tb500ms,
-                _ => return Err(Error::NoAcknowledge(NoAcknowledgeSource::Data)),
+                _ => TimingBudget::TbError,
             },
         )
     }

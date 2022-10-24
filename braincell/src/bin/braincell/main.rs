@@ -1,17 +1,18 @@
 #![no_main]
 #![no_std]
 
-// Halt on panic
-use panic_halt as _; // panic handler
 mod config;
+mod filter;
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
     use crate::config::sys_config;
     use braincell::drivers::imu::icm20948;
     use braincell::drivers::tof::vl53l1x;
+    use braincell::filtering;
     use core::fmt::Write;
     use cortex_m::asm;
+    use panic_write::PanicHandler;
     use stm32f4xx_hal::{
         gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5, PB8, PB9},
         i2c::{I2c, Mode as i2cMode},
@@ -23,12 +24,15 @@ mod app {
     use systick_monotonic::{fugit::Duration, Systick};
 
     #[shared]
-    struct Shared {}
+    struct Shared {
+        tof_front_filter: filtering::sma::SmaFilter<u16, 10>,
+        tof_left_filter: filtering::sma::SmaFilter<u16, 10>,
+    }
 
     #[local]
     struct Local {
         i2c: I2c<I2C1, (PB8, PB9)>,
-        tx: Tx<USART2>,
+        tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9>,
         tof_left: vl53l1x::VL53L1<I2C1, PB8, PB9>,
         imu: icm20948::ICM20948<
@@ -79,7 +83,7 @@ mod app {
 
         // set up uart tx
         let tx_pin = gpioa.pa2.into_alternate();
-        let mut tx = Serial::tx(
+        let serial = Serial::tx(
             ctx.device.USART2,
             tx_pin,
             Config::default()
@@ -89,6 +93,7 @@ mod app {
             &clocks,
         )
         .unwrap();
+        let mut tx = PanicHandler::new(serial);
 
         // set up ToF sensors
         let tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9> =
@@ -152,10 +157,18 @@ mod app {
             }
         }
 
+        let tof_front_filter = filtering::sma::SmaFilter::<u16, 10>::new();
+        let tof_left_filter = filtering::sma::SmaFilter::<u16, 10>::new();
+
         writeln!(tx, "system initialized\r").unwrap();
 
+        filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+
         (
-            Shared {},
+            Shared {
+                tof_front_filter,
+                tof_left_filter,
+            },
             Local {
                 i2c,
                 tx,
@@ -165,6 +178,12 @@ mod app {
             },
             init::Monotonics(mono),
         )
+    }
+
+    use crate::filter::filter_data;
+    extern "Rust" {
+        #[task(local=[tx], shared=[tof_front_filter, tof_left_filter])]
+        fn filter_data(context: filter_data::Context);
     }
 
     #[idle]

@@ -1,13 +1,14 @@
 #![no_main]
 #![no_std]
 
-// Halt on panic
-use panic_halt as _; // panic handler
-
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
 mod app {
-    use braincell::drivers::tof::vl53l1x;
+    use braincell::drivers::tof::{
+        vl53l1x,
+        vl53l1x_constants::{DEFAULT_DM, DEFAULT_IM_MS, DEFAULT_TB},
+    };
     use core::fmt::Write;
+    use panic_write::PanicHandler;
     use stm32f4xx_hal::{
         gpio::{PB8, PB9},
         i2c::{I2c, Mode as i2cMode},
@@ -23,7 +24,7 @@ mod app {
     #[local]
     struct Local {
         i2c: I2c<I2C1, (PB8, PB9)>,
-        tx: Tx<USART2>,
+        tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         tof: vl53l1x::VL53L1<I2C1, PB8, PB9>,
     }
 
@@ -53,7 +54,7 @@ mod app {
         // set up uart tx
         let gpioa = ctx.device.GPIOA.split();
         let tx_pin = gpioa.pa2.into_alternate();
-        let mut tx = Serial::tx(
+        let serial = Serial::tx(
             ctx.device.USART2,
             tx_pin,
             Config::default()
@@ -63,6 +64,8 @@ mod app {
             &clocks,
         )
         .unwrap();
+
+        let mut tx = PanicHandler::new(serial);
 
         // set up ToF sensor
         let tof: vl53l1x::VL53L1<I2C1, PB8, PB9> = match vl53l1x::VL53L1::new(&mut i2c, 0x42) {
@@ -74,9 +77,9 @@ mod app {
         };
         if let Err(_) = tof.start_ranging(
             &mut i2c,
-            Some(vl53l1x::DistanceMode::Short),
-            Some(vl53l1x::TimingBudget::Tb15ms),
-            Some(20),
+            Some(DEFAULT_DM),
+            Some(DEFAULT_TB),
+            Some(DEFAULT_IM_MS),
         ) {
             writeln!(tx, "error starting tof ranging").unwrap();
         }
