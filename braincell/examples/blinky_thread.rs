@@ -3,22 +3,22 @@
 
 // Halt on panic
 use panic_halt as _; // panic handler
-// use rtic::app;
+                     // use rtic::app;
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
 mod app {
-    use systick_monotonic::{fugit::Duration, Systick};
-    use stm32f4xx_hal::{
-        prelude::*,
-        gpio::{Output, PushPull, PA5}
-    };
     use cortex_m::asm;
+    use stm32f4xx_hal::{
+        gpio::{Output, PushPull, PA5},
+        prelude::*,
+    };
+    use systick_monotonic::{fugit::Duration, Systick};
 
     #[shared]
-    struct Shared{}
+    struct Shared {}
 
     #[local]
-    struct Local{
+    struct Local {
         led: PA5<Output<PushPull>>,
         state: bool,
     }
@@ -40,7 +40,11 @@ mod app {
         // Schedule the blinking task
         blink::spawn_after(Duration::<u64, 1, 1000>::from_ticks(1000)).unwrap();
 
-        (Shared {}, Local {led, state: false}, init::Monotonics(mono))
+        (
+            Shared {},
+            Local { led, state: false },
+            init::Monotonics(mono),
+        )
     }
 
     #[task(local = [led, state])]

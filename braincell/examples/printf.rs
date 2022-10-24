@@ -7,8 +7,8 @@
 // Halt on panic
 use panic_halt as _; // panic handler
 
-use cortex_m_rt::entry;
 use core::fmt::Write;
+use cortex_m_rt::entry;
 use stm32f4xx_hal as hal;
 
 use crate::hal::{
