@@ -4,8 +4,8 @@
 
 use cortex_m::asm;
 use stm32f4xx_hal::{
-    prelude::{_embedded_hal_blocking_spi_Write, _embedded_hal_blocking_spi_Transfer},
-    gpio::{Pin, Output, PushPull},
+    gpio::{Output, Pin, PushPull},
+    prelude::{_embedded_hal_blocking_spi_Transfer, _embedded_hal_blocking_spi_Write},
 };
 
 // Registers
@@ -58,13 +58,13 @@ enum RegAddrMag {
 #[repr(u8)]
 #[derive(Copy, Clone)]
 pub enum MagMode {
-  PowerDown = 0x00,
-  Single = 0x01 << 0,
-  Continuous10Hz = 0x01 << 1,
-  Continuous20Hz = 0x02 << 1,
-  Continuous50Hz = 0x03 << 1,
-  Continuous100Hz = 0x04 << 1,
-  SelfTest = 0x01 << 4,
+    PowerDown = 0x00,
+    Single = 0x01 << 0,
+    Continuous10Hz = 0x01 << 1,
+    Continuous20Hz = 0x02 << 1,
+    Continuous50Hz = 0x03 << 1,
+    Continuous100Hz = 0x04 << 1,
+    SelfTest = 0x01 << 4,
 }
 
 // Gyro full scale range in degrees per second
@@ -108,15 +108,15 @@ pub enum AccelFullScaleSel {
 #[repr(u8)]
 #[derive(Copy, Clone)]
 pub enum AccelDLPFSel {
-  D246bwN265bw = 0x00,
-  D246bwN265bw1 = 0x01,
-  D111bw4N136bw = 0x02,
-  D50bw4N68bw8 = 0x03,
-  D23bw9N34bw4 = 0x04,
-  D11bw5N17bw = 0x05,
-  D5bw7N8bw3 = 0x06,
-  D473bwN499bw = 0x07,
-  Disable = 0xFF,
+    D246bwN265bw = 0x00,
+    D246bwN265bw1 = 0x01,
+    D111bw4N136bw = 0x02,
+    D50bw4N68bw8 = 0x03,
+    D23bw9N34bw4 = 0x04,
+    D11bw5N17bw = 0x05,
+    D5bw7N8bw3 = 0x06,
+    D473bwN499bw = 0x07,
+    Disable = 0xFF,
 }
 
 // Constants
@@ -175,18 +175,27 @@ where
             cs,
             curr_bank: 255,
             raw_agm: AGMData::default(),
-            fss_config: FssConfig{accel: AccelFullScaleSel::Gpm2, gyro: GyroFullScaleSel::Dps250}
+            fss_config: FssConfig {
+                accel: AccelFullScaleSel::Gpm2,
+                gyro: GyroFullScaleSel::Dps250,
+            },
         }
     }
 
-    pub fn init(&mut self, accel_fss_config: AccelFullScaleSel, accel_dlpf_config: AccelDLPFSel, gyro_fss_config: GyroFullScaleSel, gyro_dlpf_config: GyroDLPFSel, mag_mode: MagMode) -> Result<(), ErrorCode>
-    {
+    pub fn init(
+        &mut self,
+        accel_fss_config: AccelFullScaleSel,
+        accel_dlpf_config: AccelDLPFSel,
+        gyro_fss_config: GyroFullScaleSel,
+        gyro_dlpf_config: GyroDLPFSel,
+        mag_mode: MagMode,
+    ) -> Result<(), ErrorCode> {
         self.check_id()?;
         self.sw_reset()?;
         asm::delay(100_000);
         self.sleep(false)?;
         self.set_low_power(false)?;
-        
+
         let mut attempts = 0;
         let mut mag_error: ErrorCode = ErrorCode::MagError;
         while attempts < MAX_MAGNETOMETER_STARTS {
@@ -196,7 +205,7 @@ where
                 Err(err) => {
                     mag_error = err;
                     asm::delay(100_000);
-                },
+                }
             }
         }
         if attempts == MAX_MAGNETOMETER_STARTS {
@@ -226,7 +235,7 @@ where
 
     pub fn read_data(&mut self) -> Result<(), ErrorCode> {
         self.set_bank(0)?;
-        let mut bytes: [u8; RAW_DATA_NUM_BYTES+1] = [0; RAW_DATA_NUM_BYTES+1];
+        let mut bytes: [u8; RAW_DATA_NUM_BYTES + 1] = [0; RAW_DATA_NUM_BYTES + 1];
         bytes[0] = RegAddrBank0::AccelXoutH as u8;
         let buf = self.read_bytes(&mut bytes[..])?;
         self.raw_agm.accel.x = (((buf[0] as u16) << 8) | buf[1] as u16) as i16;
@@ -354,7 +363,7 @@ where
         Ok(())
     }
 
-    fn set_low_power(&mut self, enable: bool) ->Result<(), ErrorCode> {
+    fn set_low_power(&mut self, enable: bool) -> Result<(), ErrorCode> {
         self.set_bank(0)?;
         let mut reg = self.read_byte(RegAddrBank0::PwrMgmt1 as u8)?;
 
@@ -373,7 +382,11 @@ where
         Ok(())
     }
 
-    fn config_accel(&mut self, fss_config: AccelFullScaleSel, dlpf_config: AccelDLPFSel) -> Result<(), ErrorCode> {
+    fn config_accel(
+        &mut self,
+        fss_config: AccelFullScaleSel,
+        dlpf_config: AccelDLPFSel,
+    ) -> Result<(), ErrorCode> {
         self.set_bank(2)?;
         let mut config = self.read_byte(RegAddrBank2::AccelConfig as u8)?;
 
@@ -398,7 +411,11 @@ where
         Ok(())
     }
 
-    fn config_gyro(&mut self, fss_config: GyroFullScaleSel, dlpf_config: GyroDLPFSel) -> Result<(), ErrorCode> {
+    fn config_gyro(
+        &mut self,
+        fss_config: GyroFullScaleSel,
+        dlpf_config: GyroDLPFSel,
+    ) -> Result<(), ErrorCode> {
         self.set_bank(2)?;
         let mut config = self.read_byte(RegAddrBank2::GyroConfig1 as u8)?;
 
@@ -531,7 +548,7 @@ where
         // I2CMstCtrl register:
         // Bits:     |      7      |    6:5   |       4       |     3:0     |
         // Function: | MULT_MST_EN | reserved | I2C_MST_P_NSR | I2C_MST_CLK |
-    
+
         // Set clk to  345.6 kHz
         reg |= 0x07;
 

@@ -6,27 +6,31 @@ use panic_halt as _; // panic handler
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
-    use systick_monotonic::{Systick};
+    use braincell::drivers::icm20948;
+    use core::fmt::Write;
+    use cortex_m::asm;
     use stm32f4xx_hal::{
-        prelude::*,
         gpio::{Alternate, PB3, PB4, PB5},
         pac::{SPI1, USART2},
+        prelude::*,
         serial::{Config, Serial, Tx},
         spi::{Mode, Phase, Polarity, Spi},
     };
-    use cortex_m::asm;
-    use core::fmt::Write;
-    use braincell::drivers::icm20948;
     use systick_monotonic::ExtU64;
+    use systick_monotonic::Systick;
 
     #[shared]
-    struct Shared{
+    struct Shared {
         tx: Tx<USART2>,
     }
 
     #[local]
-    struct Local{
-        imu: icm20948::ICM20948<Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>, 'A', 4>,
+    struct Local {
+        imu: icm20948::ICM20948<
+            Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
+            'A',
+            4,
+        >,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -77,12 +81,13 @@ mod app {
         writeln!(tx, "Initializing IMU...").unwrap();
 
         let mut imu = icm20948::ICM20948::new(imu_spi, imu_cs);
-        match imu.init(icm20948::AccelFullScaleSel::Gpm2,
-                       icm20948::AccelDLPFSel::Disable,
-                       icm20948::GyroFullScaleSel::Dps250,
-                       icm20948::GyroDLPFSel::Disable,
-                       icm20948::MagMode::Continuous100Hz)
-        {
+        match imu.init(
+            icm20948::AccelFullScaleSel::Gpm2,
+            icm20948::AccelDLPFSel::Disable,
+            icm20948::GyroFullScaleSel::Dps250,
+            icm20948::GyroDLPFSel::Disable,
+            icm20948::MagMode::Continuous100Hz,
+        ) {
             Ok(_) => writeln!(tx, "IMU initialized").unwrap(),
             Err(e) => {
                 match e {
@@ -90,7 +95,9 @@ mod app {
                     icm20948::ErrorCode::SpiError => writeln!(tx, "SPI Error").unwrap(),
                     icm20948::ErrorCode::WrongID => writeln!(tx, "Wrong ID").unwrap(),
                     icm20948::ErrorCode::MagError => writeln!(tx, "Magnetometer Error").unwrap(),
-                    icm20948::ErrorCode::MagWrongID => writeln!(tx, "Magnetometer wrong ID").unwrap(),
+                    icm20948::ErrorCode::MagWrongID => {
+                        writeln!(tx, "Magnetometer wrong ID").unwrap()
+                    }
                 }
                 panic!();
             }
@@ -99,7 +106,7 @@ mod app {
         // Schedule the imu polling task
         imu_poll::spawn().unwrap();
 
-        (Shared {tx}, Local {imu}, init::Monotonics(mono))
+        (Shared { tx }, Local { imu }, init::Monotonics(mono))
     }
 
     #[task(local = [imu], shared = [tx])]
@@ -123,8 +130,11 @@ mod app {
 
                     cx.shared.tx.lock(|tx_locked| writeln!(tx_locked, "Accel (MG): [{:.2}, {:.2}, {:.2}], Gyro (dps): [{:.2}, {:.2}, {:.2}], Mag (uT): [{:.2}, {:.2}, {:.2}]", accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z).unwrap());
                 }
-            },
-            Err(_) => cx.shared.tx.lock(|tx_locked| writeln!(tx_locked, "IMU error").unwrap()),
+            }
+            Err(_) => cx
+                .shared
+                .tx
+                .lock(|tx_locked| writeln!(tx_locked, "IMU error").unwrap()),
         }
         // Run at 20Hz
         imu_poll::spawn_at(task_start + ExtU64::millis(50)).unwrap();
