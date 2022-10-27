@@ -5,18 +5,20 @@
 use panic_halt as _; // panic handler
 mod config;
 
-#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
+#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
     use crate::config::sys_config;
+    use braincell::drivers::imu::icm20948;
     use braincell::drivers::tof::vl53l1x;
     use core::fmt::Write;
     use cortex_m::asm;
     use stm32f4xx_hal::{
-        gpio::{PB8, PB9},
+        gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5, PB8, PB9},
         i2c::{I2c, Mode as i2cMode},
-        pac::{I2C1, USART2},
+        pac::{I2C1, SPI1, USART2},
         prelude::*,
         serial::{Config, Serial, Tx},
+        spi::{Mode, Phase, Polarity, Spi},
     };
     use systick_monotonic::{fugit::Duration, Systick};
 
@@ -29,6 +31,10 @@ mod app {
         tx: Tx<USART2>,
         tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9>,
         tof_left: vl53l1x::VL53L1<I2C1, PB8, PB9>,
+        imu: icm20948::ICM20948<
+            Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
+            Pin<'A', 4, Output<PushPull>>,
+        >,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -54,8 +60,24 @@ mod app {
             &clocks,
         );
 
-        // set up uart tx
+        // configure IMU spi and cs
         let gpioa = ctx.device.GPIOA.split();
+        let imu_cs = gpioa.pa4.into_push_pull_output();
+        let imu_sclk = gpiob.pb3.into_alternate();
+        let imu_mosi = gpiob.pb5.into_alternate();
+        let imu_miso = gpiob.pb4.into_alternate();
+        let imu_spi = Spi::new(
+            ctx.device.SPI1,
+            (imu_sclk, imu_miso, imu_mosi),
+            Mode {
+                polarity: Polarity::IdleLow,
+                phase: Phase::CaptureOnFirstTransition,
+            },
+            1.MHz(),
+            &clocks,
+        );
+
+        // set up uart tx
         let tx_pin = gpioa.pa2.into_alternate();
         let mut tx = Serial::tx(
             ctx.device.USART2,
@@ -105,6 +127,31 @@ mod app {
             panic!("tof_left start_ranging failed");
         }
 
+        // set up IMU sensor
+        let mut imu = icm20948::ICM20948::new(imu_spi, imu_cs);
+        match imu.init(
+            icm20948::AccelFullScaleSel::Gpm2,
+            icm20948::AccelDLPFSel::Disable,
+            icm20948::GyroFullScaleSel::Dps250,
+            icm20948::GyroDLPFSel::Disable,
+            icm20948::MagMode::Continuous100Hz,
+        ) {
+            Ok(_) => writeln!(tx, "imu initialized").unwrap(),
+            Err(e) => {
+                match e {
+                    icm20948::ErrorCode::ParamError => writeln!(tx, "param error").unwrap(),
+                    icm20948::ErrorCode::SpiError => writeln!(tx, "SPI error").unwrap(),
+                    icm20948::ErrorCode::WrongID => writeln!(tx, "wrong ID").unwrap(),
+                    icm20948::ErrorCode::MagError => writeln!(tx, "magnetometer error").unwrap(),
+                    icm20948::ErrorCode::MagWrongID => {
+                        writeln!(tx, "magnetometer wrong ID").unwrap()
+                    }
+                    icm20948::ErrorCode::CSError => writeln!(tx, "CS error").unwrap(),
+                }
+                panic!("imu initialization failed");
+            }
+        }
+
         writeln!(tx, "system initialized\r").unwrap();
 
         (
@@ -114,6 +161,7 @@ mod app {
                 tx,
                 tof_front,
                 tof_left,
+                imu,
             },
             init::Monotonics(mono),
         )

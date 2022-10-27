@@ -10,6 +10,7 @@ use stm32f4xx_hal::prelude::{
 };
 
 // Error codes
+#[derive(Debug)]
 pub enum ErrorCode {
     ParamError,
     SpiError,
@@ -520,20 +521,14 @@ where
 
     fn write_byte(&mut self, reg: u8, data: u8) -> Result<(), ErrorCode> {
         let mut bytes = [reg, data];
-        let res = self.spi.transfer(&mut bytes[..]);
-        match res {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e),
-        }
+        self.spi.transfer(&mut bytes[..])?;
+        Ok(())
     }
 
     fn read_byte(&mut self, reg: u8) -> Result<u8, ErrorCode> {
         let mut bytes = [reg | 0x80, 0];
-        let res = self.spi.transfer(&mut bytes[..]);
-        match res {
-            Ok(data) => Ok(data[0]),
-            Err(e) => Err(e),
-        }
+        let data = self.spi.transfer(&mut bytes[..])?;
+        Ok(data[0])
     }
 
     fn read_bytes<'a>(&mut self, data: &'a mut [u8]) -> Result<&'a [u8], ErrorCode> {
