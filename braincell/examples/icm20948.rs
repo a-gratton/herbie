@@ -6,11 +6,11 @@ use panic_halt as _; // panic handler
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
-    use braincell::drivers::icm20948;
+    use braincell::drivers::imu::icm20948;
     use core::fmt::Write;
     use cortex_m::asm;
     use stm32f4xx_hal::{
-        gpio::{Alternate, PB3, PB4, PB5},
+        gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5},
         pac::{SPI1, USART2},
         prelude::*,
         serial::{Config, Serial, Tx},
@@ -28,8 +28,7 @@ mod app {
     struct Local {
         imu: icm20948::ICM20948<
             Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
-            'A',
-            4,
+            Pin<'A', 4, Output<PushPull>>,
         >,
     }
 
@@ -98,6 +97,7 @@ mod app {
                     icm20948::ErrorCode::MagWrongID => {
                         writeln!(tx, "Magnetometer wrong ID").unwrap()
                     }
+                    icm20948::ErrorCode::CSError => writeln!(tx, "CS Error").unwrap(),
                 }
                 panic!();
             }
@@ -128,7 +128,7 @@ mod app {
                     let mag_y = imu.get_mag_y();
                     let mag_z = imu.get_mag_z();
 
-                    cx.shared.tx.lock(|tx_locked| writeln!(tx_locked, "Accel (MG): [{:.2}, {:.2}, {:.2}], Gyro (dps): [{:.2}, {:.2}, {:.2}], Mag (uT): [{:.2}, {:.2}, {:.2}]", accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z).unwrap());
+                    cx.shared.tx.lock(|tx_locked| writeln!(tx_locked, "Accel (mG): [{:.2}, {:.2}, {:.2}], Gyro (dps): [{:.2}, {:.2}, {:.2}], Mag (uT): [{:.2}, {:.2}, {:.2}]", accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z).unwrap());
                 }
             }
             Err(_) => cx
@@ -136,8 +136,8 @@ mod app {
                 .tx
                 .lock(|tx_locked| writeln!(tx_locked, "IMU error").unwrap()),
         }
-        // Run at 20Hz
-        imu_poll::spawn_at(task_start + ExtU64::millis(50)).unwrap();
+        // Run at 100Hz
+        imu_poll::spawn_at(task_start + ExtU64::millis(10)).unwrap();
     }
 
     #[idle]
