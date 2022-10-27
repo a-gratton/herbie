@@ -67,6 +67,7 @@ dependencies = [
  "cortex-m-rt",
  "cortex-m-rtic",
  "embedded-hal 0.2.7",
+ "libm",
  "nb 1.0.0",
  "num-traits",
  "panic-write",
