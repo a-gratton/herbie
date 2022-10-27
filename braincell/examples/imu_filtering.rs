@@ -7,7 +7,7 @@ use panic_halt as _; // panic handler
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
     use braincell::drivers::imu::icm20948;
-    use braincell::filtering::madgwick;
+    use braincell::filtering::ahrs;
     use core::f32::consts::PI;
     use core::fmt::Write;
     use cortex_m::asm;
@@ -34,7 +34,8 @@ mod app {
             Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
             Pin<'A', 4, Output<PushPull>>,
         >,
-        madgwick_filter: madgwick::MadgwickFilter,
+        madgwick_filter: ahrs::madgwick::MadgwickFilter,
+        mahony_filter: ahrs::mahony::MahonyFilter,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -108,8 +109,10 @@ mod app {
             }
         }
 
-        // Set up madgwick filter
-        let madgwick_filter = madgwick::MadgwickFilter::new(madgwick::DEFAULT_BETA);
+        // Set up imu filters
+        let madgwick_filter = ahrs::madgwick::MadgwickFilter::new(ahrs::madgwick::DEFAULT_BETA);
+        let mahony_filter =
+            ahrs::mahony::MahonyFilter::new(ahrs::mahony::DEFAULT_KP, ahrs::mahony::DEFAULT_KI);
 
         // Schedule the imu polling task
         // Note: it is necessary to spawn the imu polling task after some delay so the initial madgwick filter
@@ -121,15 +124,17 @@ mod app {
             Local {
                 imu,
                 madgwick_filter,
+                mahony_filter,
             },
             init::Monotonics(mono),
         )
     }
 
-    #[task(local = [imu, madgwick_filter], shared = [tx])]
+    #[task(local = [imu, madgwick_filter, mahony_filter], shared = [tx])]
     fn imu_poll(mut cx: imu_poll::Context) {
         let imu = cx.local.imu;
         let madgwick_filter = cx.local.madgwick_filter;
+        let mahony_filter = cx.local.mahony_filter;
         let task_start = monotonics::now();
 
         match imu.data_ready() {
@@ -146,7 +151,7 @@ mod app {
                     let mag_y = imu.get_mag_y();
                     let mag_z = imu.get_mag_z();
 
-                    madgwick_filter.update_quaternion(
+                    madgwick_filter.update(
                         accel_x,
                         accel_y,
                         accel_z,
@@ -159,7 +164,22 @@ mod app {
                         0.01,
                     );
 
-                    let angles = madgwick_filter.get_euler_angles();
+                    mahony_filter.update(
+                        accel_x,
+                        accel_y,
+                        accel_z,
+                        gyro_x * DEG_TO_RAD,
+                        gyro_y * DEG_TO_RAD,
+                        gyro_z * DEG_TO_RAD,
+                        mag_x,
+                        mag_y,
+                        mag_z,
+                        0.01,
+                    );
+
+                    // let angles = madgwick_filter.get_euler_angles();
+                    let angles = mahony_filter.get_euler_angles();
+
                     cx.shared.tx.lock(|tx_locked| {
                         writeln!(
                             tx_locked,

@@ -8,8 +8,8 @@ const RAD_TO_DEG: f32 = 180.0 / PI;
 pub const DEFAULT_BETA: f32 = 1.5;
 
 pub struct MadgwickFilter {
-    q: (f32, f32, f32, f32),
-    beta: f32,
+    q: (f32, f32, f32, f32), // quaternion
+    beta: f32,               // free parameter
 }
 
 impl MadgwickFilter {
@@ -24,7 +24,7 @@ impl MadgwickFilter {
     // (gx, gy, gz) in rad/s
     // (mx, my, mz) in any unit
     // deltat (time delta between update calls) in seconds
-    pub fn update_quaternion(
+    pub fn update(
         &mut self,
         mut ax: f32,
         mut ay: f32,
@@ -149,5 +149,9 @@ impl MadgwickFilter {
             self.q.0 * self.q.0 + self.q.1 * self.q.1 - self.q.2 * self.q.2 - self.q.3 * self.q.3,
         );
         (roll * RAD_TO_DEG, pitch * RAD_TO_DEG, yaw * RAD_TO_DEG)
+    }
+
+    pub fn reset(&mut self) {
+        self.q = (1.0, 0.0, 0.0, 0.0);
     }
 }

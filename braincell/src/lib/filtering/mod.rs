@@ -1,2 +1,2 @@
 pub mod sma;
-pub mod madgwick;
+pub mod ahrs;
