@@ -1,6 +1,7 @@
 // Madgwick filter implementation
 // Ported from https://github.com/drcpattison/ICM-20948/blob/master/src/AHRSAlgorithms.cpp
 
+pub use crate::filtering::ahrs::ahrs_filter::*;
 use core::f32::consts::PI;
 use libm::{asinf, atan2f, sqrtf};
 
@@ -19,28 +20,24 @@ impl MadgwickFilter {
             beta,
         }
     }
+}
 
-    // (ax, ay, az) in any unit
-    // (gx, gy, gz) in rad/s
-    // (mx, my, mz) in any unit
-    // deltat (time delta between update calls) in seconds
-    pub fn update(
-        &mut self,
-        mut ax: f32,
-        mut ay: f32,
-        mut az: f32,
-        gx: f32,
-        gy: f32,
-        gz: f32,
-        mut mx: f32,
-        mut my: f32,
-        mut mz: f32,
-        deltat: f32,
-    ) {
+impl AHRSFilter for MadgwickFilter {
+    fn update(&mut self, imu_data: ImuData, deltat: f32) {
         let mut q1 = self.q.0;
         let mut q2 = self.q.1;
         let mut q3 = self.q.2;
         let mut q4 = self.q.3;
+
+        let mut ax = imu_data.accel.0;
+        let mut ay = imu_data.accel.1;
+        let mut az = imu_data.accel.2;
+        let gx = imu_data.gyro.0;
+        let gy = imu_data.gyro.1;
+        let gz = imu_data.gyro.2;
+        let mut mx = imu_data.mag.0;
+        let mut my = imu_data.mag.1;
+        let mut mz = imu_data.mag.2;
 
         // Auxiliary variables to avoid repeated arithmetic
         let _2q1 = 2.0 * q1;
@@ -137,8 +134,7 @@ impl MadgwickFilter {
         self.q.3 = q4 * norm;
     }
 
-    // (roll, pitch, yaw) in degrees
-    pub fn get_euler_angles(&self) -> (f32, f32, f32) {
+    fn get_euler_angles(&self) -> (f32, f32, f32) {
         let roll: f32 = atan2f(
             2.0 * (self.q.0 * self.q.1 + self.q.2 * self.q.3),
             self.q.0 * self.q.0 - self.q.1 * self.q.1 - self.q.2 * self.q.2 + self.q.3 * self.q.3,
@@ -151,7 +147,7 @@ impl MadgwickFilter {
         (roll * RAD_TO_DEG, pitch * RAD_TO_DEG, yaw * RAD_TO_DEG)
     }
 
-    pub fn reset(&mut self) {
+    fn reset(&mut self) {
         self.q = (1.0, 0.0, 0.0, 0.0);
     }
 }
