@@ -92,54 +92,28 @@ where
             delay(100000)
         }
 
+        // write configuration data
+        for addr in 0x2D..=0x87 {
+            self.write_byte(
+                i2c,
+                [0x00, addr],
+                VL51L1X_DEFAULT_CONFIGURATION[addr as usize - 0x2D],
+            )?;
+        }
+
+        self.set_offset(i2c, OFFSET_VALUE)?;
+
         // sanity check
         if self.get_sensor_id(i2c).unwrap_or(1) != SENSOR_ID {
             return Err(Error::NoAcknowledge(NoAcknowledgeSource::Unknown));
         }
 
-        // set config
-        let hv_extsup_config = self.read_word(i2c, PAD_I2C_HV__EXTSUP_CONFIG)?;
-        self.write_word(i2c, PAD_I2C_HV__EXTSUP_CONFIG, hv_extsup_config | 0x01)?;
-        self.write_word(i2c, DSS_CONFIG__TARGET_TOTAL_RATE_MCPS, TARGET_RATE)?;
-        self.write_byte(i2c, GPIO__TIO_HV_STATUS, 0x02)?;
-        self.write_byte(i2c, SIGMA_ESTIMATOR__EFFECTIVE_PULSE_WIDTH_NS, 8)?; // tuning parm default
-        self.write_byte(i2c, SIGMA_ESTIMATOR__EFFECTIVE_AMBIENT_WIDTH_NS, 16)?; // tuning parm default
-        self.write_byte(i2c, ALGO__CROSSTALK_COMPENSATION_VALID_HEIGHT_MM, 0x01)?;
-        self.write_byte(i2c, ALGO__RANGE_IGNORE_VALID_HEIGHT_MM, 0xFF)?;
-        self.write_byte(i2c, ALGO__RANGE_MIN_CLIP, 0)?; // tuning parm default
-        self.write_byte(i2c, ALGO__CONSISTENCY_CHECK__TOLERANCE, 2)?; // tuning parm default
-
-        // general config
-        self.write_word(i2c, SYSTEM__THRESH_RATE_HIGH, 0x0000)?;
-        self.write_word(i2c, SYSTEM__THRESH_RATE_LOW, 0x0000)?;
-        self.write_byte(i2c, DSS_CONFIG__APERTURE_ATTENUATION, 0x38)?;
-
-        // timing config
-        // most of these settings will be determined later by distance and timing
-        // budget configuration
-        self.write_word(i2c, RANGE_CONFIG__SIGMA_THRESH, 360)?; // tuning parm default
-        self.write_word(i2c, RANGE_CONFIG__MIN_COUNT_RATE_RTN_LIMIT_MCPS, 192)?; // tuning parm default
-
-        // dynamic config
-        self.write_byte(i2c, SYSTEM__GROUPED_PARAMETER_HOLD_0, 0x01)?;
-        self.write_byte(i2c, SYSTEM__GROUPED_PARAMETER_HOLD_1, 0x01)?;
-        self.write_byte(i2c, SD_CONFIG__QUANTIFIER, 2)?; // tuning parm default
-
-        self.write_byte(i2c, SYSTEM__GROUPED_PARAMETER_HOLD, 0x00)?;
-        self.write_byte(i2c, SYSTEM__SEED_CONFIG, 1)?; // tuning parm default
-
-        self.write_byte(i2c, SYSTEM__SEQUENCE_CONFIG, 0x8B)?; // VHV, PHASECAL, DSS1, RANGE
-        self.write_word(i2c, DSS_CONFIG__MANUAL_EFFECTIVE_SPADS_SELECT, 200 << 8)?;
-        self.write_byte(i2c, DSS_CONFIG__ROI_MODE_CONTROL, 2)?; // REQUESTED_EFFFECTIVE_SPADS
-        let outer_offset_mm: u16 = self.read_word(i2c, MM_CONFIG__OUTER_OFFSET_MM)?;
-        self.write_word(i2c, ALGO__PART_TO_PART_RANGE_OFFSET_MM, outer_offset_mm * 4)?;
-
         self.start_ranging(i2c, Some(DEFAULT_DM), Some(DEFAULT_TB), Some(DEFAULT_IM_MS))?;
         while self.check_for_data_ready(i2c)? == false {
             delay(100000);
         }
-        self.clear_interrupt(i2c)?;
         self.stop_ranging(i2c)?;
+        self.clear_interrupt(i2c)?;
 
         // update temperature compensation
         self.write_byte(i2c, VHV_CONFIG__TIMEOUT_MACROP_LOOP_BOUND, 0x09)?; /* two bounds VHV */
