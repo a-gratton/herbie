@@ -4,6 +4,8 @@
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
 mod app {
     use braincell::drivers::motor::mdd3a;
+    use braincell::drivers::motor::mdd3a::SetPower;
+    use braincell::drivers::motor::mdd3a::Start;
     use core::fmt::Write;
     use panic_write::PanicHandler;
     use stm32f4xx_hal::{
