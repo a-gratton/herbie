@@ -1,14 +1,12 @@
 #![no_main]
 #![no_std]
 
-// Halt on panic
-use panic_halt as _; // panic handler
-
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
     use braincell::drivers::imu::icm20948;
     use core::fmt::Write;
     use cortex_m::asm;
+    use panic_write::PanicHandler;
     use stm32f4xx_hal::{
         gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5},
         pac::{SPI1, USART2},
@@ -21,7 +19,7 @@ mod app {
 
     #[shared]
     struct Shared {
-        tx: Tx<USART2>,
+        tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
     }
 
     #[local]
@@ -47,7 +45,7 @@ mod app {
 
         // Set up uart tx
         let tx_pin = gpioa.pa2.into_alternate();
-        let mut tx = Serial::tx(
+        let serial = Serial::tx(
             ctx.device.USART2,
             tx_pin,
             Config::default()
@@ -57,6 +55,8 @@ mod app {
             &clocks,
         )
         .unwrap();
+
+        let mut tx = PanicHandler::new(serial);
 
         // Set up imu spi
         let imu_sclk = gpiob.pb3.into_alternate();

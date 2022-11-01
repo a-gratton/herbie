@@ -5,7 +5,7 @@
 #![no_std]
 
 // Halt on panic
-use panic_halt as _; // panic handler
+use panic_write::PanicHandler;
 
 use core::fmt::Write;
 use cortex_m_rt::entry;
@@ -34,7 +34,7 @@ fn main() -> ! {
 
         // Set up uart tx
         let tx_pin = gpioa.pa2.into_alternate();
-        let mut tx = Serial::tx(
+        let serial = Serial::tx(
             dp.USART2,
             tx_pin,
             Config::default()
@@ -44,6 +44,8 @@ fn main() -> ! {
             &clocks,
         )
         .unwrap();
+
+        let mut tx = PanicHandler::new(serial);
 
         writeln!(tx, "Hello, world\r").unwrap();
 

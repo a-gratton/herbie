@@ -4,7 +4,7 @@ use super::vl53l1x::TimingBudget;
 // configuration constants
 pub const TARGET_RATE: u16 = 0x0A00;
 pub const DEFAULT_DM: DistanceMode = DistanceMode::Short; // short range mode
-pub const DEFAULT_TB: TimingBudget = TimingBudget::Tb15ms; // default timing budget (ms)
+pub const DEFAULT_TB: TimingBudget = TimingBudget::Tb20ms; // default timing budget (ms)
 pub const DEFAULT_IM_MS: u32 = 20; // default inter-measurement period (ms)
 pub const DEFAULT_I2C_ADDR: u8 = 0x52 >> 1;
 pub const SENSOR_ID: u16 = 0xeacc;
