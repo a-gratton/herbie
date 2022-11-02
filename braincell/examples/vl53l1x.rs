@@ -91,6 +91,9 @@ mod app {
 
     #[task(local=[i2c, tx, tof], shared=[])]
     fn print_tof_data(cx: print_tof_data::Context) {
+        if let Err(_) = cx.local.tof.clear_interrupt(cx.local.i2c) {
+            writeln!(cx.local.tx, "error clearing interrupt").unwrap();
+        };
         if cx
             .local
             .tof
