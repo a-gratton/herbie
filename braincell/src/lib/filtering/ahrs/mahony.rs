@@ -90,9 +90,9 @@ impl AHRSFilter for MahonyFilter {
         let ey = (az * vx - ax * vz) + (mz * wx - mx * wz);
         let ez = (ax * vy - ay * vx) + (mx * wy - my * wx);
         if self.ki > 0.0 {
-            self.e.0 += ex; // accumulate integral error
-            self.e.1 += ey;
-            self.e.2 += ez;
+            self.e.0 += ex * deltat; // accumulate integral error
+            self.e.1 += ey * deltat;
+            self.e.2 += ez * deltat;
         } else {
             self.e.0 = 0.0; // prevent integral wind up
             self.e.1 = 0.0;
@@ -100,9 +100,9 @@ impl AHRSFilter for MahonyFilter {
         }
 
         // Apply feedback terms
-        gx = gx + self.kp * ex + self.ki * self.e.0;
-        gy = gy + self.kp * ey + self.ki * self.e.1;
-        gz = gz + self.kp * ez + self.ki * self.e.2;
+        gx += self.kp * ex + self.ki * self.e.0;
+        gy += self.kp * ey + self.ki * self.e.1;
+        gz += self.kp * ez + self.ki * self.e.2;
 
         // Integrate rate of change of quaternion
         let pa = q2;

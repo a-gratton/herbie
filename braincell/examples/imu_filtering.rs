@@ -24,6 +24,7 @@ mod app {
     use systick_monotonic::Systick;
 
     const DEG_TO_RAD: f32 = PI / 180.0;
+    const IMU_GYRO_BIAS: (f32, f32, f32) = (0.319, 0.034, 0.21);
 
     #[shared]
     struct Shared {
@@ -156,9 +157,9 @@ mod app {
                         ImuData {
                             accel: (accel_x, accel_y, accel_z),
                             gyro: (
-                                gyro_x * DEG_TO_RAD,
-                                gyro_y * DEG_TO_RAD,
-                                gyro_z * DEG_TO_RAD,
+                                (gyro_x - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
+                                (gyro_y - IMU_GYRO_BIAS.1) * DEG_TO_RAD,
+                                (gyro_z - IMU_GYRO_BIAS.2) * DEG_TO_RAD,
                             ),
                             mag: (mag_x, mag_y, mag_z),
                         },
@@ -169,9 +170,9 @@ mod app {
                         ImuData {
                             accel: (accel_x, accel_y, accel_z),
                             gyro: (
-                                gyro_x * DEG_TO_RAD,
-                                gyro_y * DEG_TO_RAD,
-                                gyro_z * DEG_TO_RAD,
+                                (gyro_x - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
+                                (gyro_y - IMU_GYRO_BIAS.1) * DEG_TO_RAD,
+                                (gyro_z - IMU_GYRO_BIAS.2) * DEG_TO_RAD,
                             ),
                             mag: (mag_x, mag_y, mag_z),
                         },

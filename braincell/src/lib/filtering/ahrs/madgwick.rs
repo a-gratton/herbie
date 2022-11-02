@@ -6,7 +6,8 @@ use core::f32::consts::PI;
 use libm::{asinf, atan2f, sqrtf};
 
 const RAD_TO_DEG: f32 = 180.0 / PI;
-pub const DEFAULT_BETA: f32 = 1.5;
+const GYRO_BIAS_DPS: f32 = 0.21;
+pub const DEFAULT_BETA: f32 = GYRO_BIAS_DPS * PI / 180.0 * 0.866; // where 0.866 = sqrt(3/4)
 
 pub struct MadgwickFilter {
     q: (f32, f32, f32, f32), // quaternion
