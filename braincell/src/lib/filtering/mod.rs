@@ -1,2 +1,2 @@
-pub mod sma;
 pub mod ahrs;
+pub mod sma;

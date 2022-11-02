@@ -1,18 +1,17 @@
 #![no_main]
 #![no_std]
 
-// Halt on panic
-use panic_halt as _; // panic handler
-
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
     use braincell::drivers::imu::icm20948;
     use braincell::filtering::ahrs::{
         ahrs_filter::AHRSFilter, ahrs_filter::ImuData, madgwick, mahony,
     };
+    use braincell::filtering::sma;
     use core::f32::consts::PI;
     use core::fmt::Write;
     use cortex_m::asm;
+    use panic_write::PanicHandler;
     use stm32f4xx_hal::{
         gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5},
         pac::{SPI1, USART2},
@@ -24,11 +23,15 @@ mod app {
     use systick_monotonic::Systick;
 
     const DEG_TO_RAD: f32 = PI / 180.0;
+
+    // These bias values were experimentally determined to give the best orientation readings
     const IMU_GYRO_BIAS: (f32, f32, f32) = (0.319, 0.034, 0.21);
+
+    const SMA_FILTER_SIZE: usize = 5;
 
     #[shared]
     struct Shared {
-        tx: Tx<USART2>,
+        tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
     }
 
     #[local]
@@ -37,8 +40,17 @@ mod app {
             Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
             Pin<'A', 4, Output<PushPull>>,
         >,
-        madgwick_filter: madgwick::MadgwickFilter,
-        mahony_filter: mahony::MahonyFilter,
+        madgwick: madgwick::MadgwickFilter,
+        mahony: mahony::MahonyFilter,
+        accel_x: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
+        accel_y: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
+        accel_z: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
+        gyro_x: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
+        gyro_y: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
+        gyro_z: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
+        mag_x: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
+        mag_y: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
+        mag_z: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -56,7 +68,7 @@ mod app {
 
         // Set up uart tx
         let tx_pin = gpioa.pa2.into_alternate();
-        let mut tx = Serial::tx(
+        let serial = Serial::tx(
             ctx.device.USART2,
             tx_pin,
             Config::default()
@@ -66,6 +78,7 @@ mod app {
             &clocks,
         )
         .unwrap();
+        let mut tx = PanicHandler::new(serial);
 
         // Set up imu spi
         let imu_sclk = gpiob.pb3.into_alternate();
@@ -113,8 +126,17 @@ mod app {
         }
 
         // Set up imu filters
-        let madgwick_filter = madgwick::MadgwickFilter::new(madgwick::DEFAULT_BETA);
-        let mahony_filter = mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI);
+        let accel_x = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
+        let accel_y = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
+        let accel_z = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
+        let gyro_x = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
+        let gyro_y = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
+        let gyro_z = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
+        let mag_x = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
+        let mag_y = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
+        let mag_z = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
+        let madgwick = madgwick::MadgwickFilter::new(IMU_GYRO_BIAS.2);
+        let mahony = mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI);
 
         // Schedule the imu polling task
         // Note: it is necessary to spawn the imu polling task after some delay so the initial madgwick filter
@@ -125,71 +147,100 @@ mod app {
             Shared { tx },
             Local {
                 imu,
-                madgwick_filter,
-                mahony_filter,
+                madgwick,
+                mahony,
+                accel_x,
+                accel_y,
+                accel_z,
+                gyro_x,
+                gyro_y,
+                gyro_z,
+                mag_x,
+                mag_y,
+                mag_z,
             },
             init::Monotonics(mono),
         )
     }
 
-    #[task(local = [imu, madgwick_filter, mahony_filter], shared = [tx])]
+    #[task(local = [imu, madgwick, mahony, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z], shared = [tx])]
     fn imu_poll(mut cx: imu_poll::Context) {
         let imu = cx.local.imu;
-        let madgwick_filter = cx.local.madgwick_filter;
-        let mahony_filter = cx.local.mahony_filter;
-        let task_start = monotonics::now();
+        let accel_x = cx.local.accel_x;
+        let accel_y = cx.local.accel_y;
+        let accel_z = cx.local.accel_z;
+        let gyro_x = cx.local.gyro_x;
+        let gyro_y = cx.local.gyro_y;
+        let gyro_z = cx.local.gyro_z;
+        let mag_x = cx.local.mag_x;
+        let mag_y = cx.local.mag_y;
+        let mag_z = cx.local.mag_z;
+        let madgwick = cx.local.madgwick;
+        let mahony = cx.local.mahony;
 
         match imu.data_ready() {
             Ok(data_ready) => {
                 if data_ready {
                     let _ = imu.read_data();
-                    let accel_x = imu.get_accel_x();
-                    let accel_y = imu.get_accel_y();
-                    let accel_z = imu.get_accel_z();
-                    let gyro_x = imu.get_gyro_x();
-                    let gyro_y = imu.get_gyro_y();
-                    let gyro_z = imu.get_gyro_z();
-                    let mag_x = imu.get_mag_x();
-                    let mag_y = imu.get_mag_y();
-                    let mag_z = imu.get_mag_z();
+                    accel_x.insert(imu.get_accel_x());
+                    accel_y.insert(imu.get_accel_y());
+                    accel_z.insert(imu.get_accel_z());
+                    gyro_x.insert(imu.get_gyro_x());
+                    gyro_y.insert(imu.get_gyro_y());
+                    gyro_z.insert(imu.get_gyro_z());
+                    mag_x.insert(imu.get_mag_x());
+                    mag_y.insert(imu.get_mag_y());
+                    mag_z.insert(imu.get_mag_z());
 
-                    madgwick_filter.update(
-                        ImuData {
-                            accel: (accel_x, accel_y, accel_z),
-                            gyro: (
-                                (gyro_x - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
-                                (gyro_y - IMU_GYRO_BIAS.1) * DEG_TO_RAD,
-                                (gyro_z - IMU_GYRO_BIAS.2) * DEG_TO_RAD,
-                            ),
-                            mag: (mag_x, mag_y, mag_z),
-                        },
-                        0.01,
-                    );
+                    if let Some(_) = accel_x.filtered() {
+                        let ax = accel_x.filtered().unwrap_or(1.0);
+                        let ay = accel_y.filtered().unwrap_or(1.0);
+                        let az = accel_z.filtered().unwrap_or(1.0);
+                        let gx = gyro_x.filtered().unwrap_or(1.0);
+                        let gy = gyro_y.filtered().unwrap_or(1.0);
+                        let gz = gyro_z.filtered().unwrap_or(1.0);
+                        let mx = mag_x.filtered().unwrap_or(1.0);
+                        let my = mag_y.filtered().unwrap_or(1.0);
+                        let mz = mag_z.filtered().unwrap_or(1.0);
 
-                    mahony_filter.update(
-                        ImuData {
-                            accel: (accel_x, accel_y, accel_z),
-                            gyro: (
-                                (gyro_x - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
-                                (gyro_y - IMU_GYRO_BIAS.1) * DEG_TO_RAD,
-                                (gyro_z - IMU_GYRO_BIAS.2) * DEG_TO_RAD,
-                            ),
-                            mag: (mag_x, mag_y, mag_z),
-                        },
-                        0.01,
-                    );
+                        madgwick.update(
+                            ImuData {
+                                accel: (ax, ay, az),
+                                gyro: (
+                                    (gx - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
+                                    (gy - IMU_GYRO_BIAS.1) * DEG_TO_RAD,
+                                    (gz - IMU_GYRO_BIAS.2) * DEG_TO_RAD,
+                                ),
+                                mag: (mx, my, mz),
+                            },
+                            0.01,
+                        );
 
-                    // let angles = madgwick_filter.get_euler_angles();
-                    let angles = mahony_filter.get_euler_angles();
+                        mahony.update(
+                            ImuData {
+                                accel: (ax, ay, az),
+                                gyro: (
+                                    (gx - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
+                                    (gy - IMU_GYRO_BIAS.1) * DEG_TO_RAD,
+                                    (gz - IMU_GYRO_BIAS.2) * DEG_TO_RAD,
+                                ),
+                                mag: (mx, my, mz),
+                            },
+                            0.01,
+                        );
 
-                    cx.shared.tx.lock(|tx_locked| {
-                        writeln!(
-                            tx_locked,
-                            "Roll: {} deg, Pitch: {} deg, Yaw: {} deg",
-                            angles.0, angles.1, angles.2
-                        )
-                        .unwrap()
-                    });
+                        // let angles = madgwick.get_euler_angles();
+                        let angles = mahony.get_euler_angles();
+
+                        cx.shared.tx.lock(|tx_locked| {
+                            writeln!(
+                                tx_locked,
+                                "Roll: {} deg, Pitch: {} deg, Yaw: {} deg",
+                                angles.0, angles.1, angles.2
+                            )
+                            .unwrap()
+                        });
+                    }
                 } else {
                     cx.shared
                         .tx
@@ -203,7 +254,7 @@ mod app {
             }
         }
         // Run at 100Hz
-        imu_poll::spawn_at(task_start + ExtU64::millis(10)).unwrap();
+        imu_poll::spawn_after(ExtU64::millis(10)).unwrap();
     }
 
     #[idle]

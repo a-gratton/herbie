@@ -6,8 +6,7 @@ use core::f32::consts::PI;
 use libm::{asinf, atan2f, sqrtf};
 
 const RAD_TO_DEG: f32 = 180.0 / PI;
-const GYRO_BIAS_DPS: f32 = 0.21;
-pub const DEFAULT_BETA: f32 = GYRO_BIAS_DPS * PI / 180.0 * 0.866; // where 0.866 = sqrt(3/4)
+const DEG_TO_RAD: f32 = PI / 180.0;
 
 pub struct MadgwickFilter {
     q: (f32, f32, f32, f32), // quaternion
@@ -15,10 +14,11 @@ pub struct MadgwickFilter {
 }
 
 impl MadgwickFilter {
-    pub fn new(beta: f32) -> Self {
+    // gyro bias in deg/s
+    pub fn new(gyro_bias: f32) -> Self {
         Self {
             q: (1.0, 0.0, 0.0, 0.0),
-            beta,
+            beta: gyro_bias * DEG_TO_RAD * 0.866, // where 0.866 = sqrt(3/4),
         }
     }
 }
