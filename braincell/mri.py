@@ -5,6 +5,7 @@ import datetime as dt
 import serial
 import threading
 import sys, getopt
+import csv
 
 DEFAULT_SERIAL_PORT = ''
 DEFAULT_VARIABLES_TO_PLOT = []
@@ -31,6 +32,8 @@ OPTIONS:
       Sets the max number of samples to show on the plot at each instant (default is {} samples)
    -v, --variable [variable]
       Adds a variable to the plot
+   -l, --log [path]
+      Logs the values of the collected variables to the file specified at <path>
 
 NOTE: For the plotter to work, make sure you are continuously outputting lines of data over 
 the serial port, where each line has the following format:
@@ -44,12 +47,16 @@ where VARIABLE#_NAME is a argument passed into the options list
 new_data_ready = False
 new_data_values = []
 run_read_data_thread = True
+read_data_thread = None
+log_file = None
+csv_writer = None
 
 
 def read_data(ser, variables_to_plot):
     global run_read_data_thread
     global new_data_ready
     global new_data_values
+    global csv_writer
 
     for i in variables_to_plot:
         new_data_values.append(0)
@@ -62,6 +69,8 @@ def read_data(ser, variables_to_plot):
                     if variables_to_plot[j] in line[i].decode("utf-8"):
                         new_data_values[j] = float(line[i+1].decode("utf-8"))
                         new_data_ready = True
+                        if csv_writer is not None:
+                            csv_writer.writerow([dt.datetime.now().timestamp()] + new_data_values)
         except:
             pass
 
@@ -94,6 +103,17 @@ def animate(i, ax, start_time, variables_to_plot, title, units, max_samples, xs,
     plt.ylabel(units)
 
 
+def on_close(sig):
+    global run_read_data_thread
+    global log_file
+    run_read_data_thread = False
+    if log_file is not None:
+        log_file.close()
+    read_data_thread.join()
+    plt.close()
+    sys.exit(0)
+
+
 def main(argv):
     units = DEFAULT_UNITS
     title = DEFAULT_TITLE
@@ -101,10 +121,11 @@ def main(argv):
     serial_port = DEFAULT_SERIAL_PORT
     interval_ms = DEFAULT_INTERVAL_MS
     max_samples = DEFAULT_MAX_SAMPLES
+    log_file_path = None
 
     # User args
     try:
-        opts, _ = getopt.getopt(argv,"hu:t:p:i:s:v:", ['help', 'units=', 'title=', 'port=', 'interval=', 'samples=', 'variable='])
+        opts, _ = getopt.getopt(argv,"hu:t:p:i:s:v:l", ['help', 'units=', 'title=', 'port=', 'interval=', 'samples=', 'variable=', 'log='])
     except getopt.GetoptError:
         print(USAGE)
         sys.exit(2)
@@ -125,8 +146,19 @@ def main(argv):
             max_samples = int(arg)
         elif opt in ('-v', '--variable'):
             variables_to_plot.append(arg)
+        elif opt in ('-l', '--log'):
+            print(arg);
+            log_file_path = arg;
 
     global run_read_data_thread
+    global read_data_thread
+    global log_file
+    global csv_writer
+
+    if log_file_path is not None:
+        log_file = open(f"{log_file_path}", 'w', newline='')
+        csv_writer = csv.writer(log_file)
+        csv_writer.writerow(["Timestamp"] + variables_to_plot)
 
     start_time = dt.datetime.now().timestamp()
 
@@ -150,10 +182,13 @@ def main(argv):
         ys.append([])
 
     ani = animation.FuncAnimation(fig, animate, fargs=(ax, start_time, variables_to_plot, title, units, max_samples, xs, ys), interval=interval_ms)
+    fig.canvas.mpl_connect('close_event', on_close)
     plt.show()
 
     run_read_data_thread = False
+    log_file.close()
     read_data_thread.join()
+    plt.close()
 
 if __name__ == '__main__':
     main(sys.argv[1:])
