@@ -10,7 +10,7 @@ mod app {
     use crate::filter;
     use braincell::drivers::imu::icm20948;
     use braincell::drivers::tof::vl53l1x;
-    use braincell::filtering::{ahrs::mahony, sma};
+    use braincell::filtering::{ahrs::madgwick, ahrs::mahony, sma};
     use core::fmt::Write;
     use cortex_m::asm;
     use panic_write::PanicHandler;
@@ -35,12 +35,13 @@ mod app {
     struct Local {
         i2c: I2c<I2C1, (PB8, PB9)>,
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
-        // tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9>,
-        // tof_left: vl53l1x::VL53L1<I2C1, PB8, PB9>,
+        tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9>,
+        tof_left: vl53l1x::VL53L1<I2C1, PB8, PB9>,
         imu: icm20948::ICM20948<
             Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
             Pin<'A', 4, Output<PushPull>>,
         >,
+        filter_data_prev_ticks: u64,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -98,41 +99,41 @@ mod app {
         let mut tx = PanicHandler::new(serial);
 
         // set up ToF sensors
-        // let tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9> =
-        //     match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_FRONT_ADDRESS) {
-        //         Ok(val) => val,
-        //         Err(_) => {
-        //             writeln!(tx, "tof_front initialization failed\r").unwrap();
-        //             panic!("tof_front initialization failed");
-        //         }
-        //     };
-        // if let Err(_) = tof_front.start_ranging(
-        //     &mut i2c,
-        //     Some(vl53l1x::DistanceMode::Short),
-        //     Some(vl53l1x::TimingBudget::Tb15ms),
-        //     Some(20),
-        // ) {
-        //     writeln!(tx, "error starting tof_front ranging").unwrap();
-        //     panic!("tof_front start_ranging failed");
-        // }
+        let tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9> =
+            match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_FRONT_ADDRESS) {
+                Ok(val) => val,
+                Err(_) => {
+                    writeln!(tx, "tof_front initialization failed\r").unwrap();
+                    panic!("tof_front initialization failed");
+                }
+            };
+        if let Err(_) = tof_front.start_ranging(
+            &mut i2c,
+            Some(vl53l1x::DistanceMode::Short),
+            Some(vl53l1x::TimingBudget::Tb15ms),
+            Some(20),
+        ) {
+            writeln!(tx, "error starting tof_front ranging").unwrap();
+            panic!("tof_front start_ranging failed");
+        }
 
-        // let tof_left: vl53l1x::VL53L1<I2C1, PB8, PB9> =
-        //     match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_LEFT_ADDRESS) {
-        //         Ok(val) => val,
-        //         Err(_) => {
-        //             writeln!(tx, "tof_left initialization failed\r").unwrap();
-        //             panic!("tof_front initialization failed");
-        //         }
-        //     };
-        // if let Err(_) = tof_left.start_ranging(
-        //     &mut i2c,
-        //     Some(vl53l1x::DistanceMode::Short),
-        //     Some(vl53l1x::TimingBudget::Tb15ms),
-        //     Some(20),
-        // ) {
-        //     writeln!(tx, "error starting tof_left ranging").unwrap();
-        //     panic!("tof_left start_ranging failed");
-        // }
+        let tof_left: vl53l1x::VL53L1<I2C1, PB8, PB9> =
+            match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_LEFT_ADDRESS) {
+                Ok(val) => val,
+                Err(_) => {
+                    writeln!(tx, "tof_left initialization failed\r").unwrap();
+                    panic!("tof_front initialization failed");
+                }
+            };
+        if let Err(_) = tof_left.start_ranging(
+            &mut i2c,
+            Some(vl53l1x::DistanceMode::Short),
+            Some(vl53l1x::TimingBudget::Tb15ms),
+            Some(20),
+        ) {
+            writeln!(tx, "error starting tof_left ranging").unwrap();
+            panic!("tof_left start_ranging failed");
+        }
 
         // set up IMU sensor
         let mut imu = icm20948::ICM20948::new(imu_spi, imu_cs);
@@ -161,14 +162,16 @@ mod app {
 
         let tof_front_filter = sma::SmaFilter::<u16, 10>::new();
         let tof_left_filter = sma::SmaFilter::<u16, 10>::new();
-        let ahrs_filter = mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI);
+        let madgwick_filter = madgwick::MadgwickFilter::new(sys_config::IMU_GYRO_BIAS_DPS.2);
+        let mahony_filter = mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI);
         let imu_filter = filter::ImuFilter::<
             { sys_config::IMU_SMA_FILTER_SIZE },
             mahony::MahonyFilter,
-        >::new(ahrs_filter, sys_config::IMU_GYRO_BIAS_DPS);
+        >::new(mahony_filter, sys_config::IMU_GYRO_BIAS_DPS);
 
         writeln!(tx, "system initialized\r").unwrap();
 
+        let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
         filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
 
         (
@@ -180,18 +183,42 @@ mod app {
             Local {
                 i2c,
                 tx,
-                // tof_front,
-                // tof_left,
+                tof_front,
+                tof_left,
                 imu,
+                filter_data_prev_ticks,
             },
             init::Monotonics(mono),
         )
     }
 
-    use crate::filter::filter_data;
-    extern "Rust" {
-        #[task(local=[tx, imu], shared=[tof_front_filter, tof_left_filter, imu_filter])]
-        fn filter_data(context: filter_data::Context);
+    #[task(local=[tx, imu, filter_data_prev_ticks], shared=[tof_front_filter, tof_left_filter, imu_filter])]
+    fn filter_data(mut cx: filter_data::Context) {
+        let task_start_ticks: u64 = monotonics::now().ticks();
+        let deltat: f32 = (task_start_ticks - *cx.local.filter_data_prev_ticks) as f32
+            * sys_config::SECONDS_PER_TICK;
+
+        cx.shared.tof_front_filter.lock(|tof_front_filter| {
+            tof_front_filter.insert(10);
+        });
+        cx.shared.tof_left_filter.lock(|tof_left_filter| {
+            tof_left_filter.insert(10);
+        });
+
+        // Read IMU
+        if cx.local.imu.data_ready().unwrap_or(false) {
+            if let Ok(_) = cx.local.imu.read_data() {
+                // Update IMU filter
+                cx.shared.imu_filter.lock(|imu_filter| {
+                    imu_filter.insert(cx.local.imu.get_data(), deltat);
+                });
+            }
+        }
+
+        *cx.local.filter_data_prev_ticks = task_start_ticks;
+
+        // run at 100 Hz
+        filter_data::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
     }
 
     #[idle]

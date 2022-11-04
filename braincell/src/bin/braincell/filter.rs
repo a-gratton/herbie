@@ -1,9 +1,5 @@
-use crate::app::filter_data;
 use braincell::filtering::{ahrs::ahrs_filter::AHRSFilter, ahrs::ahrs_filter::ImuData, sma};
 use core::f32::consts::PI;
-use core::fmt::Write;
-use rtic::Mutex;
-use systick_monotonic::fugit::Duration;
 
 const DEG_TO_RAD: f32 = PI / 180.0;
 
@@ -80,39 +76,4 @@ impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
             None
         }
     }
-}
-
-pub fn filter_data(mut cx: filter_data::Context) {
-    cx.shared.tof_front_filter.lock(|tof_front_filter| {
-        tof_front_filter.insert(10);
-    });
-    cx.shared.tof_left_filter.lock(|tof_left_filter| {
-        tof_left_filter.insert(10);
-    });
-
-    // Read IMU
-    if cx.local.imu.data_ready().unwrap_or(false) {
-        if let Ok(_) = cx.local.imu.read_data() {
-            // Update IMU filter
-            cx.shared.imu_filter.lock(|imu_filter| {
-                imu_filter.insert(cx.local.imu.get_data(), 0.01); // TODO: use actual time delta
-            });
-        }
-    }
-
-    let mut angles = (0.0, 0.0, 0.0);
-    cx.shared.imu_filter.lock(|imu_filter| {
-        if let Some(a) = imu_filter.filtered() {
-            angles = a;
-        }
-    });
-    writeln!(
-        cx.local.tx,
-        "Roll: {} deg, Pitch: {} deg, Yaw: {} deg",
-        angles.0, angles.1, angles.2
-    )
-    .unwrap();
-
-    // run at 100 Hz
-    filter_data::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
 }
