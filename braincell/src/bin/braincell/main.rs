@@ -192,33 +192,10 @@ mod app {
         )
     }
 
-    #[task(local=[tx, imu, filter_data_prev_ticks], shared=[tof_front_filter, tof_left_filter, imu_filter])]
-    fn filter_data(mut cx: filter_data::Context) {
-        let task_start_ticks: u64 = monotonics::now().ticks();
-        let deltat: f32 = (task_start_ticks - *cx.local.filter_data_prev_ticks) as f32
-            * sys_config::SECONDS_PER_TICK;
-
-        cx.shared.tof_front_filter.lock(|tof_front_filter| {
-            tof_front_filter.insert(10);
-        });
-        cx.shared.tof_left_filter.lock(|tof_left_filter| {
-            tof_left_filter.insert(10);
-        });
-
-        // Read IMU
-        if cx.local.imu.data_ready().unwrap_or(false) {
-            if let Ok(_) = cx.local.imu.read_data() {
-                // Update IMU filter
-                cx.shared.imu_filter.lock(|imu_filter| {
-                    imu_filter.insert(cx.local.imu.get_data(), deltat);
-                });
-            }
-        }
-
-        *cx.local.filter_data_prev_ticks = task_start_ticks;
-
-        // run at 100 Hz
-        filter_data::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
+    use crate::filter::filter_data;
+    extern "Rust" {
+        #[task(local=[imu, filter_data_prev_ticks], shared=[tof_front_filter, tof_left_filter, imu_filter])]
+        fn filter_data(mut cx: filter_data::Context);
     }
 
     #[idle]
