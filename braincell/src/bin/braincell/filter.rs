@@ -18,12 +18,18 @@ pub struct ImuFilter<const SIZE: usize, FilterType: AHRSFilter> {
     mag_y: sma::SmaFilter<f32, SIZE>,
     mag_z: sma::SmaFilter<f32, SIZE>,
     ahrs_filter: FilterType,
+    accel_bias: (f32, f32, f32),
     gyro_bias: (f32, f32, f32),
 }
 
 impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
+    // accel bias of (x,y,z) axes in mG
     // gyro bias of (x,y,z) axes in deg/s
-    pub fn new(ahrs_filter: FilterType, gyro_bias: (f32, f32, f32)) -> Self {
+    pub fn new(
+        ahrs_filter: FilterType,
+        accel_bias: (f32, f32, f32),
+        gyro_bias: (f32, f32, f32),
+    ) -> Self {
         Self {
             accel_x: sma::SmaFilter::<f32, SIZE>::new(),
             accel_y: sma::SmaFilter::<f32, SIZE>::new(),
@@ -35,6 +41,7 @@ impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
             mag_y: sma::SmaFilter::<f32, SIZE>::new(),
             mag_z: sma::SmaFilter::<f32, SIZE>::new(),
             ahrs_filter,
+            accel_bias,
             gyro_bias,
         }
     }
@@ -54,14 +61,14 @@ impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
             self.ahrs_filter.update(
                 ImuData {
                     accel: (
-                        self.accel_x.filtered().unwrap(),
-                        self.accel_y.filtered().unwrap(),
-                        self.accel_z.filtered().unwrap(),
+                        self.accel_x.filtered().unwrap() - self.accel_bias.0,
+                        self.accel_y.filtered().unwrap() - self.accel_bias.1,
+                        self.accel_z.filtered().unwrap() - self.accel_bias.2,
                     ),
                     gyro: (
                         (self.gyro_x.filtered().unwrap() - self.gyro_bias.0) * DEG_TO_RAD,
-                        (self.gyro_y.filtered().unwrap() - self.gyro_bias.0) * DEG_TO_RAD,
-                        (self.gyro_z.filtered().unwrap() - self.gyro_bias.0) * DEG_TO_RAD,
+                        (self.gyro_y.filtered().unwrap() - self.gyro_bias.1) * DEG_TO_RAD,
+                        (self.gyro_z.filtered().unwrap() - self.gyro_bias.2) * DEG_TO_RAD,
                     ),
                     mag: (
                         self.mag_x.filtered().unwrap(),

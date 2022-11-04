@@ -25,6 +25,7 @@ mod app {
 
     // These bias values were experimentally determined to give the best orientation readings
     const IMU_GYRO_BIAS: (f32, f32, f32) = (0.319, 0.034, 0.21);
+    const IMU_ACCEL_BIAS: (f32, f32, f32) = (0.0, 0.0, 0.0);
 
     const SMA_FILTER_SIZE: usize = 5;
 
@@ -212,7 +213,11 @@ mod app {
 
                         madgwick.update(
                             ImuData {
-                                accel: (ax, ay, az),
+                                accel: (
+                                    ax - IMU_ACCEL_BIAS.0,
+                                    ay - IMU_ACCEL_BIAS.1,
+                                    az - IMU_ACCEL_BIAS.2,
+                                ),
                                 gyro: (
                                     (gx - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
                                     (gy - IMU_GYRO_BIAS.1) * DEG_TO_RAD,
@@ -225,7 +230,11 @@ mod app {
 
                         mahony.update(
                             ImuData {
-                                accel: (ax, ay, az),
+                                accel: (
+                                    ax - IMU_ACCEL_BIAS.0,
+                                    ay - IMU_ACCEL_BIAS.1,
+                                    az - IMU_ACCEL_BIAS.2,
+                                ),
                                 gyro: (
                                     (gx - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
                                     (gy - IMU_GYRO_BIAS.1) * DEG_TO_RAD,

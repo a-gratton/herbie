@@ -164,10 +164,12 @@ mod app {
         let tof_left_filter = sma::SmaFilter::<u16, 10>::new();
         let madgwick_filter = madgwick::MadgwickFilter::new(sys_config::IMU_GYRO_BIAS_DPS.2);
         let mahony_filter = mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI);
-        let imu_filter = filter::ImuFilter::<
-            { sys_config::IMU_SMA_FILTER_SIZE },
-            mahony::MahonyFilter,
-        >::new(mahony_filter, sys_config::IMU_GYRO_BIAS_DPS);
+        let imu_filter =
+            filter::ImuFilter::<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
+                mahony_filter,
+                sys_config::IMU_ACCEL_BIAS_MG,
+                sys_config::IMU_GYRO_BIAS_DPS,
+            );
 
         writeln!(tx, "system initialized\r").unwrap();
 
