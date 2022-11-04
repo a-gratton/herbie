@@ -19,8 +19,7 @@ mod app {
         serial::{Config, Serial, Tx},
         spi::{Mode, Phase, Polarity, Spi},
     };
-    use systick_monotonic::ExtU64;
-    use systick_monotonic::Systick;
+    use systick_monotonic::{ExtU64, Systick};
 
     const DEG_TO_RAD: f32 = PI / 180.0;
 
@@ -51,6 +50,7 @@ mod app {
         mag_x: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
         mag_y: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
         mag_z: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
+        prev_ticks: u64,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -138,6 +138,8 @@ mod app {
         let madgwick = madgwick::MadgwickFilter::new(IMU_GYRO_BIAS.2);
         let mahony = mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI);
 
+        let prev_ticks = monotonics::now().ticks();
+
         // Schedule the imu polling task
         // Note: it is necessary to spawn the imu polling task after some delay so the initial madgwick filter
         // update can operate on non-zero imu measurement values
@@ -158,13 +160,16 @@ mod app {
                 mag_x,
                 mag_y,
                 mag_z,
+                prev_ticks,
             },
             init::Monotonics(mono),
         )
     }
 
-    #[task(local = [imu, madgwick, mahony, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z], shared = [tx])]
+    #[task(local = [imu, madgwick, mahony, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, prev_ticks], shared = [tx])]
     fn imu_poll(mut cx: imu_poll::Context) {
+        let task_start_ticks = monotonics::now().ticks();
+
         let imu = cx.local.imu;
         let accel_x = cx.local.accel_x;
         let accel_y = cx.local.accel_y;
@@ -203,6 +208,8 @@ mod app {
                         let my = mag_y.filtered().unwrap_or(1.0);
                         let mz = mag_z.filtered().unwrap_or(1.0);
 
+                        let deltat: f32 = (task_start_ticks - *cx.local.prev_ticks) as f32 / 1000.0;
+
                         madgwick.update(
                             ImuData {
                                 accel: (ax, ay, az),
@@ -213,7 +220,7 @@ mod app {
                                 ),
                                 mag: (mx, my, mz),
                             },
-                            0.01,
+                            deltat,
                         );
 
                         mahony.update(
@@ -226,7 +233,7 @@ mod app {
                                 ),
                                 mag: (mx, my, mz),
                             },
-                            0.01,
+                            deltat,
                         );
 
                         // let angles = madgwick.get_euler_angles();
@@ -253,6 +260,8 @@ mod app {
                     .lock(|tx_locked| writeln!(tx_locked, "IMU error").unwrap());
             }
         }
+        *cx.local.prev_ticks = task_start_ticks;
+
         // Run at 100Hz
         imu_poll::spawn_after(ExtU64::millis(10)).unwrap();
     }

@@ -3,6 +3,7 @@
 // Ported from this Arduino driver: https://github.com/sparkfun/SparkFun_ICM-20948_ArduinoLibrary
 
 pub use crate::drivers::imu::icm20948_constants::*;
+use crate::filtering::ahrs::ahrs_filter::ImuData;
 
 use cortex_m::asm;
 use stm32f4xx_hal::prelude::{
@@ -201,6 +202,17 @@ where
     // z-component of magnetic heading in micro Teslas
     pub fn get_mag_z(&mut self) -> f32 {
         self.get_mag_ut(self.raw_agm.mag.z)
+    }
+
+    // accel: (x,y,z) in milli G's
+    // gyro: (x,y,z) in degrees per second
+    // mag: (x,y,z) in micro Teslas
+    pub fn get_data(&mut self) -> ImuData {
+        ImuData {
+            accel: (self.get_accel_x(), self.get_accel_y(), self.get_accel_z()),
+            gyro: (self.get_gyro_x(), self.get_gyro_y(), self.get_gyro_z()),
+            mag: (self.get_mag_x(), self.get_mag_y(), self.get_mag_z()),
+        }
     }
 
     fn get_accel_mg(&mut self, raw: i16) -> f32 {
