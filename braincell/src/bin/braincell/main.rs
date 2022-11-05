@@ -10,6 +10,7 @@ mod app {
     use crate::filter;
     use braincell::drivers::imu::icm20948;
     use braincell::drivers::tof::vl53l1x;
+    use braincell::drivers::motor::mdd3a;
     use braincell::filtering::{ahrs::mahony, sma};
     use core::fmt::Write;
     use cortex_m::asm;
@@ -17,10 +18,11 @@ mod app {
     use stm32f4xx_hal::{
         gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5, PB8, PB9},
         i2c::{I2c, Mode as i2cMode},
-        pac::{I2C1, SPI1, USART2},
+        pac::{I2C1, SPI1, USART2, TIM1, TIM2, TIM3, TIM4},
         prelude::*,
         serial::{Config, Serial, Tx},
         spi::{Mode, Phase, Polarity, Spi},
+        timer::pwm::PwmChannel,
     };
     use systick_monotonic::{fugit::Duration, Systick};
 
@@ -40,6 +42,10 @@ mod app {
             Pin<'A', 4, Output<PushPull>>,
         >,
         filter_data_prev_ticks: u64,
+        motor1: mdd3a::MDD3A<PwmChannel<TIM1,0>, PwmChannel<TIM1,1>>,
+        motor2: mdd3a::MDD3A<PwmChannel<TIM2,2>,PwmChannel<TIM2,3>>,
+        motor3: mdd3a::MDD3A<PwmChannel<TIM3,0>, PwmChannel<TIM3,1>>,
+        motor4: mdd3a::MDD3A<PwmChannel<TIM4,0>, PwmChannel<TIM4,1>>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -177,6 +183,72 @@ mod app {
                 imu_gyro_bias,
             );
 
+        let gpioc = ctx.device.GPIOC.split();
+        // set up PWM
+        let channels1 = (gpioa.pa8.into_alternate(), gpioa.pa9.into_alternate()); //D7 1/1 D8 1/2 
+        let channels2 = (gpiob.pb10.into_alternate(), gpioa.pa3.into_alternate()); //D6 2/3 D0 2/4
+        let channels3 = (gpioa.pa6.into_alternate(), gpioc.pc7.into_alternate()); //d12 3/1 D9 3/2
+        let channels4 = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate()); //D10 4/1 farleft on same line as lowgnd 4/2
+
+        let pwm1 = ctx.device.TIM1.pwm_hz(channels1, 20.kHz(), &clocks).split();
+        let pwm2 = ctx.device.TIM2.pwm_hz(channels2, 20.kHz(), &clocks).split();
+        let pwm3 = ctx.device.TIM3.pwm_hz(channels3, 20.kHz(), &clocks).split();
+        let pwm4 = ctx.device.TIM4.pwm_hz(channels4, 20.kHz(), &clocks).split();
+
+        let mut motor1 = mdd3a::MDD3A::new(pwm1);
+        let mut motor2 = mdd3a::MDD3A::new(pwm2);
+        let mut motor3 = mdd3a::MDD3A::new(pwm3);
+        let mut motor4 = mdd3a::MDD3A::new(pwm4);
+
+        let max_duty = motor2.get_duty();
+        let md1 = max_duty.0;
+        let md2 = max_duty.1;
+
+        writeln!(tx,"({md1},{md2})\r").unwrap();
+
+        let power = mdd3a::convert_pidout_to_power(0.0);
+        motor1.set_power(power);
+        motor2.set_power(power);
+        motor3.set_power(power);
+        motor4.set_power(power);
+        motor1.start();
+        motor2.start();
+        motor3.start();
+        motor4.start();
+
+        let gpioc = ctx.device.GPIOC.split();
+        // set up PWM
+        let channels1 = (gpioa.pa8.into_alternate(), gpioa.pa9.into_alternate()); //D7 1/1 D8 1/2 
+        let channels2 = (gpiob.pb10.into_alternate(), gpioa.pa3.into_alternate()); //D6 2/3 D0 2/4
+        let channels3 = (gpioa.pa6.into_alternate(), gpioc.pc7.into_alternate()); //d12 3/1 D9 3/2
+        let channels4 = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate()); //D10 4/1 farleft on same line as lowgnd 4/2
+
+        let pwm1 = ctx.device.TIM1.pwm_hz(channels1, 20.kHz(), &clocks).split();
+        let pwm2 = ctx.device.TIM2.pwm_hz(channels2, 20.kHz(), &clocks).split();
+        let pwm3 = ctx.device.TIM3.pwm_hz(channels3, 20.kHz(), &clocks).split();
+        let pwm4 = ctx.device.TIM4.pwm_hz(channels4, 20.kHz(), &clocks).split();
+
+        let mut motor1 = mdd3a::MDD3A::new(pwm1);
+        let mut motor2 = mdd3a::MDD3A::new(pwm2);
+        let mut motor3 = mdd3a::MDD3A::new(pwm3);
+        let mut motor4 = mdd3a::MDD3A::new(pwm4);
+
+        let max_duty = motor2.get_duty();
+        let md1 = max_duty.0;
+        let md2 = max_duty.1;
+
+        writeln!(tx,"({md1},{md2})\r").unwrap();
+
+        let power = mdd3a::convert_pidout_to_power(0.0);
+        motor1.set_power(power);
+        motor2.set_power(power);
+        motor3.set_power(power);
+        motor4.set_power(power);
+        motor1.start();
+        motor2.start();
+        motor3.start();
+        motor4.start();
+
         writeln!(tx, "system initialized\r").unwrap();
 
         let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
@@ -193,6 +265,10 @@ mod app {
                 tof_front,
                 imu,
                 filter_data_prev_ticks,
+                motor1,
+                motor2,
+                motor3,
+                motor4,
             },
             init::Monotonics(mono),
         )

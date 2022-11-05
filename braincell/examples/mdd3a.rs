@@ -2,12 +2,13 @@
 #![no_std]
 
 // Halt on panic
-use panic_halt as _; // panic handler
+//use panic_halt as _; // panic handler
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
 mod app {
     use braincell::drivers::motor::mdd3a;
     use core::fmt::Write;
+    use panic_write::PanicHandler;
     use stm32f4xx_hal::{
         pac::{USART2},
         prelude::*,
@@ -22,7 +23,7 @@ mod app {
 
     #[local]
     struct Local {
-        tx: Tx<USART2>,
+        tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         motor1: mdd3a::MDD3A<PwmChannel<TIM1,0>, PwmChannel<TIM1,1>>,
         motor2: mdd3a::MDD3A<PwmChannel<TIM2,2>,PwmChannel<TIM2,3>>,
         motor3: mdd3a::MDD3A<PwmChannel<TIM3,0>, PwmChannel<TIM3,1>>,
@@ -45,7 +46,7 @@ mod app {
 
         // set up uart tx
         let tx_pin = gpioa.pa2.into_alternate();
-        let mut tx = Serial::tx(
+        let serial = Serial::tx(
             ctx.device.USART2,
             tx_pin,
             Config::default()
@@ -55,6 +56,8 @@ mod app {
             &clocks,
         )
         .unwrap();
+
+        let mut tx = PanicHandler::new(serial);
 
         // set up PWM
         let channels1 = (gpioa.pa8.into_alternate(), gpioa.pa9.into_alternate()); //D7 1/1 D8 1/2 
@@ -89,7 +92,7 @@ mod app {
         motor4.start();
 
 
-        writeln!(tx, "system initialized\r").unwrap();
+        //writeln!(tx, "system initialized\r").unwrap();
         set_pwm_pwr::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
         (Shared {}, Local { tx, motor1, motor2, motor3, motor4 }, init::Monotonics(mono))
     }
