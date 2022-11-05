@@ -250,9 +250,10 @@ mod app {
         let encoder_f_right = n20::N20::new(encoder3_qei);
         let encoder_r_right = n20::N20::new(encoder4_qei);
 
-        // initial state
+        // supervisor state variables
         let state: supervisor::State = supervisor::State::Idle;
         let curr_leg: usize = 0;
+        let num_samples_within_yaw_tolerance: usize = 0;
 
         writeln!(tx, "system initialized\r").unwrap();
 
@@ -280,6 +281,7 @@ mod app {
                 button,
                 state,
                 curr_leg,
+                num_samples_within_yaw_tolerance,
             },
             init::Monotonics(mono),
         )
@@ -299,7 +301,7 @@ mod app {
 
     use crate::supervisor::supervisor;
     extern "Rust" {
-        #[task(local=[button, state, curr_leg], shared=[motor_setpoints, tof_front_filter, imu_filter])]
+        #[task(local=[button, state, curr_leg, num_samples_within_yaw_tolerance, turning_pid], shared=[motor_setpoints, tof_front_filter, imu_filter])]
         fn supervisor(context: supervisor::Context);
     }
 
