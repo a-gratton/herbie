@@ -4,12 +4,14 @@
 mod config;
 mod filter;
 mod motors;
+mod supervisor;
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
     use crate::config::sys_config;
     use crate::config::tuning;
     use crate::filter;
+    use crate::supervisor;
     use braincell::controller;
     use braincell::drivers::encoder::n20;
     use braincell::drivers::imu::icm20948;
@@ -20,7 +22,7 @@ mod app {
     use cortex_m::asm;
     use panic_write::PanicHandler;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
+        gpio::{Alternate, Input, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
         i2c::{I2c, Mode as i2cMode},
         pac::{I2C2, SPI1, TIM1, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
         prelude::*,
@@ -47,7 +49,6 @@ mod app {
             Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
             Pin<'A', 4, Output<PushPull>>,
         >,
-        filter_data_prev_ticks: u64,
         motors: controller::motor::Motors<
             mdd3a::MDD3A<PwmChannel<TIM1, 0>, PwmChannel<TIM1, 1>>,
             mdd3a::MDD3A<PwmChannel<TIM1, 2>, PwmChannel<TIM1, 3>>,
@@ -61,6 +62,10 @@ mod app {
             n20::N20<Qei<TIM4, (Pin<'B', 6, Alternate<2>>, Pin<'B', 7, Alternate<2>>)>>,
         encoder_r_right:
             n20::N20<Qei<TIM5, (Pin<'A', 0, Alternate<2>>, Pin<'A', 1, Alternate<2>>)>>,
+        filter_data_prev_ticks: u64,
+        button: Pin<'C', 13, Input>,
+        state: supervisor::State,
+        curr_leg: usize,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -118,6 +123,10 @@ mod app {
         )
         .unwrap();
         let mut tx = PanicHandler::new(serial);
+
+        // set up button
+        let gpioc = ctx.device.GPIOC.split();
+        let button = gpioc.pc13.into_input();
 
         // set up ToF sensors
         let tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12> =
@@ -241,6 +250,10 @@ mod app {
         let encoder_f_right = n20::N20::new(encoder3_qei);
         let encoder_r_right = n20::N20::new(encoder4_qei);
 
+        // initial state
+        let state: supervisor::State = supervisor::State::Idle;
+        let curr_leg: usize = 0;
+
         writeln!(tx, "system initialized\r").unwrap();
 
         let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
@@ -258,12 +271,15 @@ mod app {
                 i2c,
                 tof_front,
                 imu,
-                filter_data_prev_ticks,
                 motors,
                 encoder_f_left,
                 encoder_r_left,
                 encoder_f_right,
                 encoder_r_right,
+                filter_data_prev_ticks,
+                button,
+                state,
+                curr_leg,
             },
             init::Monotonics(mono),
         )
@@ -280,6 +296,12 @@ mod app {
         #[task(local=[motors, encoder_f_left, encoder_r_left, encoder_f_right, encoder_r_right], shared=[tx, motor_setpoints])]
         fn speed_control(context: speed_control::Context);
     }
+
+    // use crate::supervisor::supervisor;
+    // extern "Rust" {
+    //     #[task(local=[button, state, curr_leg], shared=[motor_setpoints, tof_front_filter, imu_filter])]
+    //     fn supervisor(context: supervisor::Context);
+    // }
 
     #[idle]
     fn idle(_ctx: idle::Context) -> ! {

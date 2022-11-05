@@ -14,3 +14,15 @@ pub const MOTOR_DIRECTIONS: MotorDirections = MotorDirections {
     f_right: Direction::Backward,
     r_right: Direction::Backward,
 };
+pub const NUM_LEGS_IN_RACE: usize = 11;
+pub const DISTANCE_TO_WALL_THRESHOLD_MM: f32 = 50.0;
+pub const PITCH_LOWER_BOUND_DEG: f32 = -10.0;
+pub const PITCH_UPPER_BOUND_DEG: f32 = 10.0;
+pub const LINEAR_SPEED_PROFILE_TAU_MM: f32 = 1.0;
+pub const TURNING_SPEED_PROFILE_TAU_DEG: f32 = 1.0;
+pub const YAW_SET_POINTS_DEG: [f32; NUM_LEGS_IN_RACE] = [
+    0.0, -90.0, 180.0, 90.0, 0.0, -90.0, 180.0, 90.0, 0.0, -90.0, 180.0,
+];
+pub const YAW_TOLERANCE_DEG: f32 = 1.0;
+pub const YAW_CORRECTION_GAIN: f32 = 1.0;
+pub const MAX_MOTOR_SPEED_DPS: f32 = 0.0;
