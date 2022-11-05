@@ -10,7 +10,7 @@ mod app {
     use crate::filter;
     use braincell::drivers::imu::icm20948;
     use braincell::drivers::tof::vl53l1x;
-    use braincell::filtering::{ahrs::madgwick, ahrs::mahony, sma};
+    use braincell::filtering::{ahrs::mahony, sma};
     use core::fmt::Write;
     use cortex_m::asm;
     use panic_write::PanicHandler;
@@ -162,11 +162,9 @@ mod app {
 
         let tof_front_filter = sma::SmaFilter::<u16, 10>::new();
         let tof_left_filter = sma::SmaFilter::<u16, 10>::new();
-        let madgwick_filter = madgwick::MadgwickFilter::new(sys_config::IMU_GYRO_BIAS_DPS.2);
-        let mahony_filter = mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI);
         let imu_filter =
             filter::ImuFilter::<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
-                mahony_filter,
+                mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI),
                 sys_config::IMU_ACCEL_BIAS_MG,
                 sys_config::IMU_GYRO_BIAS_DPS,
             );

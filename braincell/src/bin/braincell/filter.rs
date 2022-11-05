@@ -40,9 +40,9 @@ impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
             mag_x: sma::SmaFilter::<f32, SIZE>::new(),
             mag_y: sma::SmaFilter::<f32, SIZE>::new(),
             mag_z: sma::SmaFilter::<f32, SIZE>::new(),
-            ahrs_filter,
-            accel_bias,
-            gyro_bias,
+            ahrs_filter: ahrs_filter,
+            accel_bias: accel_bias,
+            gyro_bias: gyro_bias,
         }
     }
 
@@ -61,19 +61,19 @@ impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
             self.ahrs_filter.update(
                 ImuData {
                     accel: (
-                        self.accel_x.filtered().unwrap() - self.accel_bias.0,
-                        self.accel_y.filtered().unwrap() - self.accel_bias.1,
-                        self.accel_z.filtered().unwrap() - self.accel_bias.2,
+                        self.accel_x.filtered().unwrap_or(1.0) - self.accel_bias.0,
+                        self.accel_y.filtered().unwrap_or(1.0) - self.accel_bias.1,
+                        self.accel_z.filtered().unwrap_or(1.0) - self.accel_bias.2,
                     ),
                     gyro: (
-                        (self.gyro_x.filtered().unwrap() - self.gyro_bias.0) * DEG_TO_RAD,
-                        (self.gyro_y.filtered().unwrap() - self.gyro_bias.1) * DEG_TO_RAD,
-                        (self.gyro_z.filtered().unwrap() - self.gyro_bias.2) * DEG_TO_RAD,
+                        (self.gyro_x.filtered().unwrap_or(1.0) - self.gyro_bias.0) * DEG_TO_RAD,
+                        (self.gyro_y.filtered().unwrap_or(1.0) - self.gyro_bias.1) * DEG_TO_RAD,
+                        (self.gyro_z.filtered().unwrap_or(1.0) - self.gyro_bias.2) * DEG_TO_RAD,
                     ),
                     mag: (
-                        self.mag_x.filtered().unwrap(),
-                        self.mag_y.filtered().unwrap(),
-                        self.mag_z.filtered().unwrap(),
+                        self.mag_x.filtered().unwrap_or(1.0),
+                        self.mag_y.filtered().unwrap_or(1.0),
+                        self.mag_z.filtered().unwrap_or(1.0),
                     ),
                 },
                 deltat,
