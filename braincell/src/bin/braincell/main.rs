@@ -9,8 +9,8 @@ mod app {
     use crate::config::sys_config;
     use crate::filter;
     use braincell::drivers::imu::icm20948;
-    use braincell::drivers::tof::vl53l1x;
     use braincell::drivers::motor::mdd3a;
+    use braincell::drivers::tof::vl53l1x;
     use braincell::filtering::{ahrs::mahony, sma};
     use core::fmt::Write;
     use cortex_m::asm;
@@ -18,7 +18,7 @@ mod app {
     use stm32f4xx_hal::{
         gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5, PB8, PB9},
         i2c::{I2c, Mode as i2cMode},
-        pac::{I2C1, SPI1, USART2, TIM1, TIM2, TIM3, TIM4},
+        pac::{I2C1, SPI1, TIM1, TIM2, TIM3, TIM4, USART2},
         prelude::*,
         serial::{Config, Serial, Tx},
         spi::{Mode, Phase, Polarity, Spi},
@@ -42,10 +42,10 @@ mod app {
             Pin<'A', 4, Output<PushPull>>,
         >,
         filter_data_prev_ticks: u64,
-        motor1: mdd3a::MDD3A<PwmChannel<TIM1,0>, PwmChannel<TIM1,1>>,
-        motor2: mdd3a::MDD3A<PwmChannel<TIM2,2>,PwmChannel<TIM2,3>>,
-        motor3: mdd3a::MDD3A<PwmChannel<TIM3,0>, PwmChannel<TIM3,1>>,
-        motor4: mdd3a::MDD3A<PwmChannel<TIM4,0>, PwmChannel<TIM4,1>>,
+        motor1: mdd3a::MDD3A<PwmChannel<TIM1, 0>, PwmChannel<TIM1, 1>>,
+        motor2: mdd3a::MDD3A<PwmChannel<TIM2, 2>, PwmChannel<TIM2, 3>>,
+        motor3: mdd3a::MDD3A<PwmChannel<TIM3, 0>, PwmChannel<TIM3, 1>>,
+        motor4: mdd3a::MDD3A<PwmChannel<TIM4, 0>, PwmChannel<TIM4, 1>>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -185,7 +185,7 @@ mod app {
 
         let gpioc = ctx.device.GPIOC.split();
         // set up PWM
-        let channels1 = (gpioa.pa8.into_alternate(), gpioa.pa9.into_alternate()); //D7 1/1 D8 1/2 
+        let channels1 = (gpioa.pa8.into_alternate(), gpioa.pa9.into_alternate()); //D7 1/1 D8 1/2
         let channels2 = (gpiob.pb10.into_alternate(), gpioa.pa3.into_alternate()); //D6 2/3 D0 2/4
         let channels3 = (gpioa.pa6.into_alternate(), gpioc.pc7.into_alternate()); //d12 3/1 D9 3/2
         let channels4 = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate()); //D10 4/1 farleft on same line as lowgnd 4/2
@@ -204,7 +204,7 @@ mod app {
         let md1 = max_duty.0;
         let md2 = max_duty.1;
 
-        writeln!(tx,"({md1},{md2})\r").unwrap();
+        writeln!(tx, "({md1},{md2})\r").unwrap();
 
         let power = mdd3a::convert_pidout_to_power(0.0);
         motor1.set_power(power);
@@ -218,7 +218,7 @@ mod app {
 
         let gpioc = ctx.device.GPIOC.split();
         // set up PWM
-        let channels1 = (gpioa.pa8.into_alternate(), gpioa.pa9.into_alternate()); //D7 1/1 D8 1/2 
+        let channels1 = (gpioa.pa8.into_alternate(), gpioa.pa9.into_alternate()); //D7 1/1 D8 1/2
         let channels2 = (gpiob.pb10.into_alternate(), gpioa.pa3.into_alternate()); //D6 2/3 D0 2/4
         let channels3 = (gpioa.pa6.into_alternate(), gpioc.pc7.into_alternate()); //d12 3/1 D9 3/2
         let channels4 = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate()); //D10 4/1 farleft on same line as lowgnd 4/2
@@ -237,7 +237,7 @@ mod app {
         let md1 = max_duty.0;
         let md2 = max_duty.1;
 
-        writeln!(tx,"({md1},{md2})\r").unwrap();
+        writeln!(tx, "({md1},{md2})\r").unwrap();
 
         let power = mdd3a::convert_pidout_to_power(0.0);
         motor1.set_power(power);

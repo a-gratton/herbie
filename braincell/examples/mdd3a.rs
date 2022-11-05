@@ -10,11 +10,11 @@ mod app {
     use core::fmt::Write;
     use panic_write::PanicHandler;
     use stm32f4xx_hal::{
-        pac::{USART2},
+        pac::USART2,
+        pac::{TIM1, TIM2, TIM3, TIM4},
         prelude::*,
         serial::{Config, Serial, Tx},
         timer::pwm::PwmChannel,
-        pac::{TIM1, TIM2, TIM3, TIM4},
     };
     use systick_monotonic::{fugit::Duration, Systick};
 
@@ -24,10 +24,10 @@ mod app {
     #[local]
     struct Local {
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
-        motor1: mdd3a::MDD3A<PwmChannel<TIM1,0>, PwmChannel<TIM1,1>>,
-        motor2: mdd3a::MDD3A<PwmChannel<TIM2,2>,PwmChannel<TIM2,3>>,
-        motor3: mdd3a::MDD3A<PwmChannel<TIM3,0>, PwmChannel<TIM3,1>>,
-        motor4: mdd3a::MDD3A<PwmChannel<TIM4,0>, PwmChannel<TIM4,1>>,
+        motor1: mdd3a::MDD3A<PwmChannel<TIM1, 0>, PwmChannel<TIM1, 1>>,
+        motor2: mdd3a::MDD3A<PwmChannel<TIM2, 2>, PwmChannel<TIM2, 3>>,
+        motor3: mdd3a::MDD3A<PwmChannel<TIM3, 0>, PwmChannel<TIM3, 1>>,
+        motor4: mdd3a::MDD3A<PwmChannel<TIM4, 0>, PwmChannel<TIM4, 1>>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -60,7 +60,7 @@ mod app {
         let mut tx = PanicHandler::new(serial);
 
         // set up PWM
-        let channels1 = (gpioa.pa8.into_alternate(), gpioa.pa9.into_alternate()); //D7 1/1 D8 1/2 
+        let channels1 = (gpioa.pa8.into_alternate(), gpioa.pa9.into_alternate()); //D7 1/1 D8 1/2
         let channels2 = (gpiob.pb10.into_alternate(), gpioa.pa3.into_alternate()); //D6 2/3 D0 2/4
         let channels3 = (gpioa.pa6.into_alternate(), gpioc.pc7.into_alternate()); //d12 3/1 D9 3/2
         let channels4 = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate()); //D10 4/1 farleft on same line as lowgnd 4/2
@@ -79,7 +79,7 @@ mod app {
         let md1 = max_duty.0;
         let md2 = max_duty.1;
 
-        writeln!(tx,"({md1},{md2})\r").unwrap();
+        writeln!(tx, "({md1},{md2})\r").unwrap();
 
         let power = mdd3a::convert_pidout_to_power(0.0);
         motor1.set_power(power);
@@ -91,10 +91,19 @@ mod app {
         motor3.start();
         motor4.start();
 
-
         //writeln!(tx, "system initialized\r").unwrap();
         set_pwm_pwr::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
-        (Shared {}, Local { tx, motor1, motor2, motor3, motor4 }, init::Monotonics(mono))
+        (
+            Shared {},
+            Local {
+                tx,
+                motor1,
+                motor2,
+                motor3,
+                motor4,
+            },
+            init::Monotonics(mono),
+        )
     }
 
     #[task(local=[tx, motor1, motor2, motor3, motor4], shared=[])]
@@ -105,8 +114,6 @@ mod app {
         let power = mdd3a::convert_pidout_to_power(100.0);
         motor1.set_power(power);
         motor2.set_power(power);
-
-
 
         // run at 100 Hz
         set_pwm_pwr::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
