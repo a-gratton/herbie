@@ -297,11 +297,11 @@ mod app {
         fn speed_control(context: speed_control::Context);
     }
 
-    // use crate::supervisor::supervisor;
-    // extern "Rust" {
-    //     #[task(local=[button, state, curr_leg], shared=[motor_setpoints, tof_front_filter, imu_filter])]
-    //     fn supervisor(context: supervisor::Context);
-    // }
+    use crate::supervisor::supervisor;
+    extern "Rust" {
+        #[task(local=[button, state, curr_leg], shared=[motor_setpoints, tof_front_filter, imu_filter])]
+        fn supervisor(context: supervisor::Context);
+    }
 
     #[idle]
     fn idle(_ctx: idle::Context) -> ! {

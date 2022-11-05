@@ -44,7 +44,7 @@ fn compute_yaw_error(measured_yaw: f32, desired_yaw: f32) -> f32 {
 }
 
 pub fn supervisor(mut cx: supervisor::Context) {
-    // Get TOF and IMU readings
+    // get TOF and IMU readings
     let distance: f32 = 0.0;
     cx.shared
         .tof_front_filter
@@ -62,15 +62,28 @@ pub fn supervisor(mut cx: supervisor::Context) {
                     .into_inter()
                     .for_each(|setpoint| setpoint = 0.0)
             });
-            // check for button press
+            // check for button press and release
             if cx.local.button.is_low() {
+                while (cx.local.button.is_low()) {
+                    asm::nop();
+                }
                 cx.local.curr_leg = 1;
                 cx.local.state = State::Linear;
             }
         }
         State::Linear => {
+            // check for button press and release
+            if cx.local.button.is_low() {
+                while (cx.local.button.is_low()) {
+                    asm::nop();
+                }
+                cx.local.curr_leg = 0;
+                cx.local.state = State::Idle;
+            }
             // check if linear leg is complete
-            if distance < sys_config::DISTANCE_TO_WALL_THRESHOLD_MM
+            else if distance
+                < sys_config::DISTANCE_TO_WALL_THRESHOLDS_MM[curr_leg]
+                    - sys_config::ROBOT_CENTER_TO_TOF_MM
                 && within_range(
                     pitch,
                     sys_config::PITCH_LOWER_BOUND_DEG,
@@ -112,24 +125,29 @@ pub fn supervisor(mut cx: supervisor::Context) {
             }
         }
         State::Turning => {
-            // check if yaw set point is reached
-            let yaw_error: f32 =
-                compute_yaw_error(yaw, sys_config::YAW_SET_POINTS_DEG[cx.local.curr_leg]);
-            if within_range(
-                yaw_error,
-                -sys_config::YAW_TOLERANCE_DEG,
-                sys_config::YAW_TOLERANCE_DEG,
-            ) {
-                cx.local.state = State::Linear;
+            // check for button press and release
+            if cx.local.button.is_low() {
+                while (cx.local.button.is_low()) {
+                    asm::nop();
+                }
+                cx.local.curr_leg = 0;
+                cx.local.state = State::Idle;
             } else {
-                // compute right and left side speed set points
-                let base_speed: f32 = turning_speed_profile(yaw_error);
-                let (right_side_speed, left_side_speed): (f32, f32) = (-base_speed, base_speed);
-                // set motor set points
-                motor_setpoints.f_right = right_side_speed;
-                motor_setpoints.r_right = right_side_speed;
-                motor_setpoints.f_left = left_side_speed;
-                motor_setpoints.r_left = left_side_speed;
+                // check if yaw set point is reached
+                let yaw_error: f32 =
+                    compute_yaw_error(yaw, sys_config::YAW_SET_POINTS_DEG[cx.local.curr_leg]);
+                if absf(yaw_error) < sys_config::YAW_TOLERANCE_DEG {
+                    cx.local.state = State::Linear;
+                } else {
+                    // compute right and left side speed set points
+                    let base_speed: f32 = turning_speed_profile(yaw_error);
+                    let (right_side_speed, left_side_speed): (f32, f32) = (-base_speed, base_speed);
+                    // set motor set points
+                    motor_setpoints.f_right = right_side_speed;
+                    motor_setpoints.r_right = right_side_speed;
+                    motor_setpoints.f_left = left_side_speed;
+                    motor_setpoints.r_left = left_side_speed;
+                }
             }
         }
     }
