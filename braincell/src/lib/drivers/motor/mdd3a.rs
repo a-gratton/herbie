@@ -181,6 +181,30 @@ Y: embedded_hal::PwmPin,
 
 use embedded_hal::PwmPin;
 
+/*
+Helper Function
+input: -100 < float < 100
+out: 0 < tuple: u16 < 65536
+Decription: converts float to tuple (_,0) or (0,_) depending sign of float
+out is to be used as the parameter in set_power
+*/
+pub fn convert_pidout_to_power(mut f: f32) -> (u16,u16){
+    let mut dir = true;
+
+    if f < 0.0 {
+        dir = false;
+        f = -1.0*f;
+    }
+
+    let duty = (f*366.36) as u16; //truncate
+
+    if dir == true {
+        return (duty, 0);
+    } else {
+        return (0, duty);
+    }
+}
+
 pub struct MDD3A<X, Y>  
 {
     pwm: (X,Y),
@@ -196,22 +220,7 @@ Y: embedded_hal::PwmPin
             pwm: in1,
         }
     }
-    pub fn set_power(&mut self, mut power: f32) -> (u16,u16){
-        let mut dir = true;
-        if power < 0.0 {
-            dir = false;
-            power = -1.0 * power;
-        }
-        let duty = (power*655.36) as u16;
-
-        if dir == true {
-            return (duty, 0 as u16);
-        } else {
-            return (0 as u16,duty);
-        }
-        
-    }
-    pub fn change(&mut self, (speedx,speedy): (<X as PwmPin>::Duty, <Y as PwmPin>::Duty)) {
+    pub fn set_power(&mut self, (speedx,speedy): (<X as PwmPin>::Duty, <Y as PwmPin>::Duty)) {
             self.pwm.0.set_duty(speedx);
             self.pwm.1.set_duty(speedy);
     }
