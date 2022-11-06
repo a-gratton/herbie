@@ -185,39 +185,6 @@ mod app {
                 imu_gyro_bias,
             );
 
-        let gpioc = ctx.device.GPIOC.split();
-        // set up PWM
-        let channels1 = (gpioa.pa8.into_alternate(), gpioa.pa9.into_alternate()); //D7 1/1 D8 1/2
-        let channels2 = (gpiob.pb10.into_alternate(), gpioa.pa3.into_alternate()); //D6 2/3 D0 2/4
-        let channels3 = (gpioa.pa6.into_alternate(), gpioc.pc7.into_alternate()); //d12 3/1 D9 3/2
-        let channels4 = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate()); //D10 4/1 farleft on same line as lowgnd 4/2
-
-        let pwm1 = ctx.device.TIM1.pwm_hz(channels1, 20.kHz(), &clocks).split();
-        let pwm2 = ctx.device.TIM2.pwm_hz(channels2, 20.kHz(), &clocks).split();
-        let pwm3 = ctx.device.TIM3.pwm_hz(channels3, 20.kHz(), &clocks).split();
-        let pwm4 = ctx.device.TIM4.pwm_hz(channels4, 20.kHz(), &clocks).split();
-
-        let mut motor1 = mdd3a::MDD3A::new(pwm1);
-        let mut motor2 = mdd3a::MDD3A::new(pwm2);
-        let mut motor3 = mdd3a::MDD3A::new(pwm3);
-        let mut motor4 = mdd3a::MDD3A::new(pwm4);
-
-        let max_duty = motor2.get_duty();
-        let md1 = max_duty.0;
-        let md2 = max_duty.1;
-
-        writeln!(tx, "({md1},{md2})\r").unwrap();
-
-        let power = mdd3a::convert_pidout_to_power(0.0);
-        motor1.set_power(power);
-        motor2.set_power(power);
-        motor3.set_power(power);
-        motor4.set_power(power);
-        motor1.start();
-        motor2.start();
-        motor3.start();
-        motor4.start();
-
         //set up PWM
         let channels1 = (
             gpioa.pa8.into_alternate(),
