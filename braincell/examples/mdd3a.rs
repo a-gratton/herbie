@@ -84,20 +84,9 @@ mod app {
 
         //let mut motor1 = mdd3a::MDD3A::new(pwm1);
         let mut motor2 = mdd3a::MDD3A::new(pwm2);
-        let mut motorsmth = mdd3a::MDD3A::new(pwm5);
-        //let mut motor3 = mdd3a::MDD3A::new(pwm3);
-        //let mut motor4 = mdd3a::MDD3A::new(pwm4);
+        let mut motor3 = mdd3a::MDD3A::new(pwm3);
+        let mut motor4 = mdd3a::MDD3A::new(pwm4);
 
-        //let max_duty = motor2.get_duty();
-        //let md1 = max_duty.0;
-        //let md2 = max_duty.1;
-
-        //writeln!(tx, "({md1},{md2})\r").unwrap();
-/*
-        motor1.set_power(0.0);
-        motor2.set_power(0.0);
-        motor3.set_power(0.0);
-        motor4.set_power(0.0);
         motor1.start();
         motor2.start();
         motor3.start();
@@ -122,11 +111,10 @@ mod app {
 
     #[task(local=[tx, motor1, motor2, motor3, motor4], shared=[])]
     fn set_pwm_pwr(cx: set_pwm_pwr::Context) {
-        let motor1 = cx.local.motor1;
-        let motor2 = cx.local.motor2;
-        //let task_start = monotonics::now();
-        motor1.set_power(100.0);
-        motor2.set_power(100.0);
+        cx.local.motor1.set_power(100.0);
+        cx.local.motor2.set_power(100.0);
+        cx.local.motor3.set_power(100.0);
+        cx.local.motor4.set_power(100.0);
 
         // run at 100 Hz
         set_pwm_pwr::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();

@@ -233,16 +233,6 @@ mod app {
         let mut motor3 = mdd3a::MDD3A::new(pwm3);
         let mut motor4 = mdd3a::MDD3A::new(pwm4);
 
-        let max_duty = motor2.get_duty();
-        let md1 = max_duty.0;
-        let md2 = max_duty.1;
-
-        writeln!(tx, "({md1},{md2})\r").unwrap();
-
-        motor1.set_power(0.0);
-        motor2.set_power(0.0);
-        motor3.set_power(0.0);
-        motor4.set_power(0.0);
         motor1.start();
         motor2.start();
         motor3.start();

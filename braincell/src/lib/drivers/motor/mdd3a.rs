@@ -19,15 +19,16 @@ where
         self.pwm.1.set_duty(speedy);
     }
 
-    pub fn get_duty(&mut self) -> (<X as PwmPin>::Duty, <Y as PwmPin>::Duty) {
+    pub fn start(&mut self) {
+        self.set_power(0.0);
+        self.pwm.0.enable();
+        self.pwm.1.enable();
+    }
+
+    fn get_max_duty(&mut self) -> (<X as PwmPin>::Duty, <Y as PwmPin>::Duty) {
         let x = self.pwm.0.get_max_duty();
         let y = self.pwm.1.get_max_duty();
         return (x, y);
-    }
-
-    pub fn start(&mut self) {
-        self.pwm.0.enable();
-        self.pwm.1.enable();
     }
 
     /*
@@ -37,25 +38,21 @@ where
     Decription: converts float to tuple (_,0) or (0,_) depending sign of float
     out is to be used as the parameter in set_power
     */
-    fn convert_pidout_to_power(&self, mut f: f32) -> (u16, u16) {
-    let mut dir = true;
+    fn convert_pidout_to_power(&mut self, mut f: f32) -> (u16, u16) {
+        let mut positive_power = true;
 
-    if f < 0.0 {
-        dir = false;
-        f = -1.0 * f;
+        if f < 0.0 {
+            positive_power = false;
+            f = -1.0 * f;
+        }
+
+        let (md1, md2) = self.get_max_duty();
+        if positive_power {
+            let duty = (f * (md1 as f32) / 100.0) as u16; //truncate
+            return (duty, 0);
+        } else {
+            let duty = (f * (md2 as f32) / 100.0) as u16; //truncate
+            return (0, duty);
+        }
     }
-
-    let mut duty = (f * 24.0) as u16; //truncate
-
-    //even though it's okay to set duty greater than max_duty, just in case something bad happens
-    if duty > 2400 {
-        duty = 2400;
-    }
-
-    if dir == true {
-        return (duty, 0);
-    } else {
-        return (0, duty);
-    }
-}
 }
