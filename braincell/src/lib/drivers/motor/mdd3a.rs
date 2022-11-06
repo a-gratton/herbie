@@ -1,16 +1,18 @@
 use embedded_hal::PwmPin;
 
-pub struct MDD3A<X, Y> {
-    pwm: (X, Y),
+pub struct MDD3A<PWM1, PWM2> {
+    pwm: (PWM1, PWM2),
 }
 
-impl<X, Y> MDD3A<X, Y>
+impl<PWM1, PWM2> MDD3A<PWM1, PWM2>
 where
-    X: embedded_hal::PwmPin + PwmPin<Duty = u16>,
-    Y: embedded_hal::PwmPin + PwmPin<Duty = u16>,
+    PWM1: embedded_hal::PwmPin + PwmPin<Duty = u16>,
+    PWM2: embedded_hal::PwmPin + PwmPin<Duty = u16>,
 {
-    pub fn new(in1: (X, Y)) -> Self {
-        Self { pwm: in1 }
+    pub fn new(tuple_pwm: (PWM1, PWM2)) -> Self {
+        Self {
+            pwm: tuple_pwm
+        }
     }
 
     pub fn set_power(&mut self, speed: f32) {
@@ -25,7 +27,7 @@ where
         self.pwm.1.enable();
     }
 
-    fn get_max_duty(&mut self) -> (<X as PwmPin>::Duty, <Y as PwmPin>::Duty) {
+    fn get_max_duty(&mut self) -> (u16, u16) {
         let x = self.pwm.0.get_max_duty();
         let y = self.pwm.1.get_max_duty();
         return (x, y);
