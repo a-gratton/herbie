@@ -19,14 +19,9 @@ mod app {
         serial::{Config, Serial, Tx},
         spi::{Mode, Phase, Polarity, Spi},
     };
-    use systick_monotonic::ExtU64;
-    use systick_monotonic::Systick;
+    use systick_monotonic::{ExtU64, Systick};
 
     const DEG_TO_RAD: f32 = PI / 180.0;
-
-    // These bias values were experimentally determined to give the best orientation readings
-    const IMU_GYRO_BIAS: (f32, f32, f32) = (0.319, 0.034, 0.21);
-
     const SMA_FILTER_SIZE: usize = 5;
 
     #[shared]
@@ -51,6 +46,8 @@ mod app {
         mag_x: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
         mag_y: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
         mag_z: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
+        prev_ticks: u64,
+        imu_gyro_bias: (f32, f32, f32),
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -125,6 +122,35 @@ mod app {
             }
         }
 
+        // IMU CALIBRATION SEQUENCE
+        writeln!(tx, "Calibrating IMU...").unwrap();
+        let num_samples = 10000;
+        let mut gyro_sum: (f32, f32, f32) = (0.0, 0.0, 0.0);
+        for _ in 1..=num_samples {
+            while !imu.data_ready().unwrap_or(false) {}
+            if let Ok(_) = imu.read_data() {
+                gyro_sum.0 += imu.get_gyro_x();
+                gyro_sum.1 += imu.get_gyro_y();
+                gyro_sum.2 += imu.get_gyro_z();
+            }
+        }
+        let imu_gyro_bias = (
+            gyro_sum.0 / (num_samples as f32),
+            gyro_sum.1 / (num_samples as f32),
+            gyro_sum.2 / (num_samples as f32),
+        );
+
+        writeln!(tx, "\n").unwrap();
+        writeln!(
+            tx,
+            "Average gyro values (deg/s): [{}, {}, {}]",
+            imu_gyro_bias.0, imu_gyro_bias.1, imu_gyro_bias.2
+        )
+        .unwrap();
+        writeln!(tx, "\n").unwrap();
+
+        asm::delay(1000000);
+
         // Set up imu filters
         let accel_x = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
         let accel_y = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
@@ -135,8 +161,10 @@ mod app {
         let mag_x = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
         let mag_y = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
         let mag_z = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
-        let madgwick = madgwick::MadgwickFilter::new(IMU_GYRO_BIAS.2);
+        let madgwick = madgwick::MadgwickFilter::new(imu_gyro_bias.2);
         let mahony = mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI);
+
+        let prev_ticks = monotonics::now().ticks();
 
         // Schedule the imu polling task
         // Note: it is necessary to spawn the imu polling task after some delay so the initial madgwick filter
@@ -158,13 +186,17 @@ mod app {
                 mag_x,
                 mag_y,
                 mag_z,
+                prev_ticks,
+                imu_gyro_bias,
             },
             init::Monotonics(mono),
         )
     }
 
-    #[task(local = [imu, madgwick, mahony, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z], shared = [tx])]
+    #[task(local = [imu, madgwick, mahony, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, prev_ticks, imu_gyro_bias], shared = [tx])]
     fn imu_poll(mut cx: imu_poll::Context) {
+        let task_start_ticks = monotonics::now().ticks();
+
         let imu = cx.local.imu;
         let accel_x = cx.local.accel_x;
         let accel_y = cx.local.accel_y;
@@ -177,6 +209,7 @@ mod app {
         let mag_z = cx.local.mag_z;
         let madgwick = cx.local.madgwick;
         let mahony = cx.local.mahony;
+        let imu_gyro_bias = cx.local.imu_gyro_bias;
 
         match imu.data_ready() {
             Ok(data_ready) => {
@@ -203,30 +236,32 @@ mod app {
                         let my = mag_y.filtered().unwrap_or(1.0);
                         let mz = mag_z.filtered().unwrap_or(1.0);
 
+                        let deltat: f32 = (task_start_ticks - *cx.local.prev_ticks) as f32 / 1000.0;
+
                         madgwick.update(
                             ImuData {
                                 accel: (ax, ay, az),
                                 gyro: (
-                                    (gx - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
-                                    (gy - IMU_GYRO_BIAS.1) * DEG_TO_RAD,
-                                    (gz - IMU_GYRO_BIAS.2) * DEG_TO_RAD,
+                                    (gx - imu_gyro_bias.0) * DEG_TO_RAD,
+                                    (gy - imu_gyro_bias.1) * DEG_TO_RAD,
+                                    (gz - imu_gyro_bias.2) * DEG_TO_RAD,
                                 ),
                                 mag: (mx, my, mz),
                             },
-                            0.01,
+                            deltat,
                         );
 
                         mahony.update(
                             ImuData {
                                 accel: (ax, ay, az),
                                 gyro: (
-                                    (gx - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
-                                    (gy - IMU_GYRO_BIAS.1) * DEG_TO_RAD,
-                                    (gz - IMU_GYRO_BIAS.2) * DEG_TO_RAD,
+                                    (gx - imu_gyro_bias.0) * DEG_TO_RAD,
+                                    (gy - imu_gyro_bias.1) * DEG_TO_RAD,
+                                    (gz - imu_gyro_bias.2) * DEG_TO_RAD,
                                 ),
                                 mag: (mx, my, mz),
                             },
-                            0.01,
+                            deltat,
                         );
 
                         // let angles = madgwick.get_euler_angles();
@@ -253,6 +288,8 @@ mod app {
                     .lock(|tx_locked| writeln!(tx_locked, "IMU error").unwrap());
             }
         }
+        *cx.local.prev_ticks = task_start_ticks;
+
         // Run at 100Hz
         imu_poll::spawn_after(ExtU64::millis(10)).unwrap();
     }

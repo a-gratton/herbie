@@ -7,9 +7,10 @@ mod filter;
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
     use crate::config::sys_config;
+    use crate::filter;
     use braincell::drivers::imu::icm20948;
     use braincell::drivers::tof::vl53l1x;
-    use braincell::filtering;
+    use braincell::filtering::{ahrs::mahony, sma};
     use core::fmt::Write;
     use cortex_m::asm;
     use panic_write::PanicHandler;
@@ -25,8 +26,9 @@ mod app {
 
     #[shared]
     struct Shared {
-        tof_front_filter: filtering::sma::SmaFilter<u16, 10>,
-        tof_left_filter: filtering::sma::SmaFilter<u16, 10>,
+        tof_front_filter: sma::SmaFilter<u16, 10>,
+        tof_left_filter: sma::SmaFilter<u16, 10>,
+        imu_filter: filter::ImuFilter<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
     }
 
     #[local]
@@ -39,6 +41,7 @@ mod app {
             Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
             Pin<'A', 4, Output<PushPull>>,
         >,
+        filter_data_prev_ticks: u64,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -157,17 +160,54 @@ mod app {
             }
         }
 
-        let tof_front_filter = filtering::sma::SmaFilter::<u16, 10>::new();
-        let tof_left_filter = filtering::sma::SmaFilter::<u16, 10>::new();
+        // IMU calibration
+        let imu_gyro_bias = {
+            if sys_config::CALIBRATE_IMU {
+                writeln!(tx, "calibrating imu...").unwrap();
+                let num_samples = sys_config::IMU_CALIBRATION_NUM_SAMPLES;
+                let mut gyro_sum: (f32, f32, f32) = (0.0, 0.0, 0.0);
+                for _ in 1..=num_samples {
+                    while !imu.data_ready().unwrap_or(false) {}
+                    if let Ok(_) = imu.read_data() {
+                        gyro_sum.0 += imu.get_gyro_x();
+                        gyro_sum.1 += imu.get_gyro_y();
+                        gyro_sum.2 += imu.get_gyro_z();
+                    }
+                }
+                (
+                    gyro_sum.0 / (num_samples as f32),
+                    gyro_sum.1 / (num_samples as f32),
+                    gyro_sum.2 / (num_samples as f32),
+                )
+            } else {
+                sys_config::DEFAULT_IMU_GYRO_BIAS_DPS
+            }
+        };
+        writeln!(
+            tx,
+            "imu gyro bias (deg/s): [{}, {}, {}]",
+            imu_gyro_bias.0, imu_gyro_bias.1, imu_gyro_bias.2
+        )
+        .unwrap();
+
+        let tof_front_filter = sma::SmaFilter::<u16, 10>::new();
+        let tof_left_filter = sma::SmaFilter::<u16, 10>::new();
+        let imu_filter =
+            filter::ImuFilter::<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
+                mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI),
+                imu_gyro_bias,
+            );
 
         writeln!(tx, "system initialized\r").unwrap();
 
+        let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
         filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
 
         (
             Shared {
                 tof_front_filter,
                 tof_left_filter,
+                imu_filter,
             },
             Local {
                 i2c,
@@ -175,6 +215,7 @@ mod app {
                 tof_front,
                 tof_left,
                 imu,
+                filter_data_prev_ticks,
             },
             init::Monotonics(mono),
         )
@@ -182,8 +223,8 @@ mod app {
 
     use crate::filter::filter_data;
     extern "Rust" {
-        #[task(local=[tx], shared=[tof_front_filter, tof_left_filter])]
-        fn filter_data(context: filter_data::Context);
+        #[task(local=[imu, filter_data_prev_ticks], shared=[tof_front_filter, tof_left_filter, imu_filter])]
+        fn filter_data(mut cx: filter_data::Context);
     }
 
     #[idle]
