@@ -10,9 +10,7 @@ where
     PWM2: embedded_hal::PwmPin + PwmPin<Duty = u16>,
 {
     pub fn new(tuple_pwm: (PWM1, PWM2)) -> Self {
-        Self {
-            pwm: tuple_pwm
-        }
+        Self { pwm: tuple_pwm }
     }
 
     pub fn set_power(&mut self, speed: f32) {
