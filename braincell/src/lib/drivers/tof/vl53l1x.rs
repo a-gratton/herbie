@@ -331,6 +331,18 @@ where
         Ok(self.read_word(i2c, RESULT__FINAL_CROSSTALK_CORRECTED_RANGE_MM_SD0)?)
     }
 
+    pub fn distance_valid(&self, i2c: &mut I2c<I2C, (SCL, SDA)>) -> Result<bool, Error> {
+        Ok(self.get_range_status(i2c)? == 0)
+    }
+
+    fn get_range_status(&self, i2c: &mut I2c<I2C, (SCL, SDA)>) -> Result<u8, Error> {
+        let range_status = self.read_byte(i2c, RESULT__RANGE_STATUS)? & 0x1f;
+        if range_status < 24 {
+            return Ok(STATUS_RTN[range_status as usize]);
+        }
+        return Err(Error::NoAcknowledge(NoAcknowledgeSource::Data));
+    }
+
     pub fn get_sensor_id(&self, i2c: &mut I2c<I2C, (SCL, SDA)>) -> Result<u16, Error> {
         Ok(self.read_word(i2c, IDENTIFICATION__MODEL_ID)?)
     }

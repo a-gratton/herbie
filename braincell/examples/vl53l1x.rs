@@ -100,8 +100,15 @@ mod app {
             .check_for_data_ready(cx.local.i2c)
             .unwrap_or(false)
         {
-            let x: u16 = cx.local.tof.get_distance(cx.local.i2c).unwrap_or(0);
-            writeln!(cx.local.tx, "distance: {x}\r").unwrap();
+            // read ToF
+            match cx.local.tof.get_distance(cx.local.i2c) {
+                Ok(distance) => {
+                    if matches!(cx.local.tof.distance_valid(cx.local.i2c), Ok(true)) {
+                        writeln!(cx.local.tx, "distance: {distance}\r").unwrap();
+                    }
+                }
+                Err(_e) => {}
+            }
             if let Err(_) = cx.local.tof.clear_interrupt(cx.local.i2c) {
                 writeln!(cx.local.tx, "error clearing interrupt").unwrap();
             };
