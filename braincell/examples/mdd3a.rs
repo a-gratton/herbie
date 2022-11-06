@@ -94,11 +94,10 @@ mod app {
 
         //writeln!(tx, "({md1},{md2})\r").unwrap();
 /*
-        let power = mdd3a::convert_pidout_to_power(0.0);
-        motor1.set_power(power);
-        motor2.set_power(power);
-        motor3.set_power(power);
-        motor4.set_power(power);
+        motor1.set_power(0.0);
+        motor2.set_power(0.0);
+        motor3.set_power(0.0);
+        motor4.set_power(0.0);
         motor1.start();
         motor2.start();
         motor3.start();
@@ -126,9 +125,8 @@ mod app {
         let motor1 = cx.local.motor1;
         let motor2 = cx.local.motor2;
         //let task_start = monotonics::now();
-        let power = mdd3a::convert_pidout_to_power(100.0);
-        motor1.set_power(power);
-        motor2.set_power(power);
+        motor1.set_power(100.0);
+        motor2.set_power(100.0);
 
         // run at 100 Hz
         set_pwm_pwr::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();

@@ -239,11 +239,10 @@ mod app {
 
         writeln!(tx, "({md1},{md2})\r").unwrap();
 
-        let power = mdd3a::convert_pidout_to_power(0.0);
-        motor1.set_power(power);
-        motor2.set_power(power);
-        motor3.set_power(power);
-        motor4.set_power(power);
+        motor1.set_power(0.0);
+        motor2.set_power(0.0);
+        motor3.set_power(0.0);
+        motor4.set_power(0.0);
         motor1.start();
         motor2.start();
         motor3.start();
