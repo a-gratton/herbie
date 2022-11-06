@@ -40,6 +40,7 @@ fn main() -> ! {
 
 
     let gpioa = dp.GPIOA.split();
+    let gpiob = dp.GPIOB.split();
 
     let tx_pin = gpioa.pa2.into_alternate();
     let mut tx = Serial::tx(
@@ -54,7 +55,7 @@ fn main() -> ! {
       .unwrap();
 
     // Connect a rotary encoder to pins A0 and A1.
-    let rotary_encoder_pins = (gpioa.pa0.into_alternate(), gpioa.pa1.into_alternate());
+    let rotary_encoder_pins = (gpioa.pa15.into_alternate(), gpiob.pb9.into_alternate());
     let rotary_encoder_timer = dp.TIM2;
     let rotary_encoder = Qei::new(rotary_encoder_timer, rotary_encoder_pins);
     let mut encoder = encoder::n20::QeiWrapper::new(rotary_encoder);
