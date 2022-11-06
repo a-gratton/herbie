@@ -27,7 +27,6 @@ mod app {
     #[shared]
     struct Shared {
         tof_front_filter: sma::SmaFilter<u16, 10>,
-        tof_left_filter: sma::SmaFilter<u16, 10>,
         imu_filter: filter::ImuFilter<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
     }
 
@@ -36,7 +35,6 @@ mod app {
         i2c: I2c<I2C1, (PB8, PB9)>,
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9>,
-        tof_left: vl53l1x::VL53L1<I2C1, PB8, PB9>,
         imu: icm20948::ICM20948<
             Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
             Pin<'A', 4, Output<PushPull>>,
@@ -117,24 +115,6 @@ mod app {
             panic!("tof_front start_ranging failed");
         }
 
-        let tof_left: vl53l1x::VL53L1<I2C1, PB8, PB9> =
-            match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_LEFT_ADDRESS) {
-                Ok(val) => val,
-                Err(_) => {
-                    writeln!(tx, "tof_left initialization failed\r").unwrap();
-                    panic!("tof_front initialization failed");
-                }
-            };
-        if let Err(_) = tof_left.start_ranging(
-            &mut i2c,
-            Some(vl53l1x::DistanceMode::Short),
-            Some(vl53l1x::TimingBudget::Tb15ms),
-            Some(20),
-        ) {
-            writeln!(tx, "error starting tof_left ranging").unwrap();
-            panic!("tof_left start_ranging failed");
-        }
-
         // set up IMU sensor
         let mut imu = icm20948::ICM20948::new(imu_spi, imu_cs);
         match imu.init(
@@ -191,7 +171,6 @@ mod app {
         .unwrap();
 
         let tof_front_filter = sma::SmaFilter::<u16, 10>::new();
-        let tof_left_filter = sma::SmaFilter::<u16, 10>::new();
         let imu_filter =
             filter::ImuFilter::<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
                 mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI),
@@ -206,14 +185,12 @@ mod app {
         (
             Shared {
                 tof_front_filter,
-                tof_left_filter,
                 imu_filter,
             },
             Local {
                 i2c,
                 tx,
                 tof_front,
-                tof_left,
                 imu,
                 filter_data_prev_ticks,
             },
@@ -223,7 +200,7 @@ mod app {
 
     use crate::filter::filter_data;
     extern "Rust" {
-        #[task(local=[imu, filter_data_prev_ticks], shared=[tof_front_filter, tof_left_filter, imu_filter])]
+        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[tof_front_filter, imu_filter])]
         fn filter_data(mut cx: filter_data::Context);
     }
 

@@ -10,6 +10,18 @@ pub const DEFAULT_I2C_ADDR: u8 = 0x52 >> 1;
 pub const SENSOR_ID: u16 = 0xeacc;
 pub const OFFSET_VALUE: i16 = 27;
 
+/*
+0 = no error,
+1 = sigma failure,
+2 = signal failure,
+4 = sensor out-of-bounds,
+7 = wraparound
+*/
+pub const STATUS_RTN: [u8; 24] = [
+    255, 255, 255, 5, 2, 4, 1, 7, 3, 0, 255, 255, 9, 13, 255, 255, 255, 255, 10, 6, 255, 255, 11,
+    12,
+];
+
 pub const VL51L1X_DEFAULT_CONFIGURATION: [u8; 91] = [
     0x00, /* 0x2d : set bit 2 and 5 to 1 for fast plus mode (1MHz I2C), else don't touch */
     0x00, /* 0x2e : bit 0 if I2C pulled up at 1.8V, else set bit 0 to 1 (pull up at AVDD) */
@@ -261,7 +273,7 @@ pub const SYSTEM__GROUPED_PARAMETER_HOLD: [u8; 2] = [0x00, 0x82];
 pub const SYSTEM__INTERRUPT_CLEAR: [u8; 2] = [0x00, 0x86];
 pub const SYSTEM__MODE_START: [u8; 2] = [0x00, 0x87];
 // pub const RESULT__INTERRUPT_STATUS                                                   : [u8; 2] = [0x00, 0x88];
-// pub const RESULT__RANGE_STATUS                                                       : [u8; 2] = [0x00, 0x89];
+pub const RESULT__RANGE_STATUS: [u8; 2] = [0x00, 0x89];
 // pub const RESULT__REPORT_STATUS                                                      : [u8; 2] = [0x00, 0x8A];
 // pub const RESULT__STREAM_COUNT                                                       : [u8; 2] = [0x00, 0x8B];
 // pub const RESULT__DSS_ACTUAL_EFFECTIVE_SPADS_SD0                                     : [u8; 2] = [0x00, 0x8C];

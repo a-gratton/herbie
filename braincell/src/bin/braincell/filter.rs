@@ -89,12 +89,24 @@ pub fn filter_data(mut cx: filter_data::Context) {
         (task_start_ticks - *cx.local.filter_data_prev_ticks) as f32 * sys_config::SECONDS_PER_TICK;
     *cx.local.filter_data_prev_ticks = task_start_ticks;
 
-    cx.shared.tof_front_filter.lock(|tof_front_filter| {
-        tof_front_filter.insert(10);
-    });
-    cx.shared.tof_left_filter.lock(|tof_left_filter| {
-        tof_left_filter.insert(10);
-    });
+    // read ToF
+    if cx
+        .local
+        .tof_front
+        .check_for_data_ready(cx.local.i2c)
+        .unwrap_or(false)
+    {
+        match cx.local.tof_front.get_distance(cx.local.i2c) {
+            Ok(distance) => {
+                if matches!(cx.local.tof_front.distance_valid(cx.local.i2c), Ok(true)) {
+                    cx.shared.tof_front_filter.lock(|tof_front_filter| {
+                        tof_front_filter.insert(distance);
+                    });
+                }
+            }
+            Err(_e) => {}
+        }
+    }
 
     // read IMU
     if cx.local.imu.data_ready().unwrap_or(false) {
