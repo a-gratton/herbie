@@ -17,18 +17,21 @@ pub const MOTOR_DIRECTIONS: MotorDirections = MotorDirections {
 pub const NUM_LEGS_IN_RACE: usize = 11;
 pub const MAX_MOTOR_SPEED_DPS: f32 = 0.0;
 
-pub const ROBOT_CENTER_TO_TOF_MM: f32 = 100.0;
-pub const DISTANCE_TO_WALL_THRESHOLDS_MM: [f32; NUM_LEGS_IN_RACE] = [
-    150.0, 150.0, 150.0, 450.0, 450.0, 450.0, 450.0, 750.0, 750.0, 750.0, 750.0,
-];
+pub const ROBOT_CENTER_TO_TOF_MM: u16 = 100;
+pub const DESIRED_OFFSET_TO_WALL_MM: u16 = 150;
+pub const DISTANCE_TO_WALL_THRESHOLDS_MM: [u16; NUM_LEGS_IN_RACE] =
+    [150, 150, 150, 450, 450, 450, 450, 750, 750, 750, 750];
+pub const MAX_DISTANCE_MM: u16 = 1800;
 
-pub const PITCH_LOWER_BOUND_DEG: f32 = -10.0;
-pub const PITCH_UPPER_BOUND_DEG: f32 = 10.0;
+pub const PITCH_LOWER_BOUND_DEG: f32 = -20.0;
+pub const PITCH_UPPER_BOUND_DEG: f32 = 20.0;
 
-pub const LINEAR_SPEED_PROFILE_TAU_MM: f32 = 1.0;
+// Linear speed profile function: v(x) = v_max * (1 - exp(-(x-offset)/tau))
+// where tau is the time constant, offset is the desired offset between the
+// robot center and the wal, and v_max is the max motor speed
+pub const LINEAR_SPEED_PROFILE_TAU_MM: f32 = 100.0;
 
-pub const YAW_TOLERANCE_DEG: f32 = 4.0;
-pub const YAW_CORRECTION_GAIN: f32 = 1.0;
+pub const YAW_TOLERANCE_DEG: f32 = 2.0;
 pub const YAW_SET_POINTS_DEG: [f32; NUM_LEGS_IN_RACE] = [
     0.0, -90.0, 180.0, 90.0, 0.0, -90.0, 180.0, 90.0, 0.0, -90.0, 180.0,
 ];

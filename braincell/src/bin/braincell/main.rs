@@ -64,6 +64,7 @@ mod app {
             n20::N20<Qei<TIM5, (Pin<'A', 0, Alternate<2>>, Pin<'A', 1, Alternate<2>>)>>,
         filter_data_prev_ticks: u64,
         button: Pin<'C', 13, Input>,
+        led: Pin<'A', 5, Output>,
         state: supervisor::State,
         curr_leg: usize,
     }
@@ -127,6 +128,9 @@ mod app {
         // set up button
         let gpioc = ctx.device.GPIOC.split();
         let button = gpioc.pc13.into_input();
+
+        // set up led
+        let led = gpioa.pa5.into_push_pull_output();
 
         // set up ToF sensors
         let tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12> =
@@ -279,6 +283,7 @@ mod app {
                 encoder_r_right,
                 filter_data_prev_ticks,
                 button,
+                led,
                 state,
                 curr_leg,
                 num_samples_within_yaw_tolerance,
@@ -301,7 +306,7 @@ mod app {
 
     use crate::supervisor::supervisor;
     extern "Rust" {
-        #[task(local=[button, state, curr_leg, num_samples_within_yaw_tolerance, turning_pid], shared=[motor_setpoints, tof_front_filter, imu_filter])]
+        #[task(local=[button, led, state, curr_leg, num_samples_within_yaw_tolerance, turning_pid, yaw_compensation_pid], shared=[motor_setpoints, tof_front_filter, imu_filter])]
         fn supervisor(context: supervisor::Context);
     }
 
