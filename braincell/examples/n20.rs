@@ -55,14 +55,28 @@ fn main() -> ! {
       .unwrap();
 
     // Connect a rotary encoder to pins A0 and A1.
-    let rotary_encoder_pins = (gpioa.pa15.into_alternate(), gpiob.pb9.into_alternate());
-    let rotary_encoder_timer = dp.TIM2;
-    let rotary_encoder = Qei::new(rotary_encoder_timer, rotary_encoder_pins);
-    let mut encoder = encoder::n20::QeiWrapper::new(rotary_encoder);
+    let encoder1_pins = (gpioa.pa15.into_alternate(), gpiob.pb9.into_alternate());
+    let encoder2_pins = (gpioa.pa6.into_alternate(), gpioa.pa7.into_alternate());
+    let encoder3_pins = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate());
+    let encoder4_pins = (gpioa.pa0.into_alternate(), gpioa.pa1.into_alternate());
+
+    let encoder1_timer = dp.TIM2;
+    let encoder2_timer = dp.TIM3;
+    let encoder3_timer = dp.TIM4;
+    let encoder4_timer = dp.TIM5;
+
+    let encoder1_qei = Qei::new(encoder1_timer, encoder1_pins);
+    let encoder2_qei = Qei::new(encoder2_timer, encoder2_pins);
+    let encoder3_qei = Qei::new(encoder3_timer, encoder3_pins);
+    let encoder4_qei = Qei::new(encoder4_timer, encoder4_pins);
+    let mut encoder1 = encoder::n20::QeiWrapper::new(encoder1_qei);
+    let mut encoder2 = encoder::n20::QeiWrapper::new(encoder2_qei);
+    let mut encoder3 = encoder::n20::QeiWrapper::new(encoder3_qei);
+    let mut encoder4 = encoder::n20::QeiWrapper::new(encoder4_qei);
 
     loop {
         //let new_count = rotary_encoder.count();
-        let new_count = encoder.get_speed();
+        let new_count = encoder1.get_speed();
         //writeln!(tx, "Count: {new_count}\r").unwrap();
         writeln!(tx, "Count: {new_count}\r").unwrap();
 
