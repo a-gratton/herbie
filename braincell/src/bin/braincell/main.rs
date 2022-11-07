@@ -21,6 +21,7 @@ mod app {
     use core::fmt::Write;
     use cortex_m::asm;
     use panic_write::PanicHandler;
+    use pid;
     use stm32f4xx_hal::{
         gpio::{Alternate, Input, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
         i2c::{I2c, Mode as i2cMode},
@@ -67,6 +68,9 @@ mod app {
         led: Pin<'A', 5, Output>,
         state: supervisor::State,
         curr_leg: usize,
+        num_samples_within_yaw_tolerance: usize,
+        turning_pid: pid::Pid<f32>,
+        yaw_compensation_pid: pid::Pid<f32>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -126,7 +130,6 @@ mod app {
         let mut tx = PanicHandler::new(serial);
 
         // set up button
-        let gpioc = ctx.device.GPIOC.split();
         let button = gpioc.pc13.into_input();
 
         // set up led
@@ -258,6 +261,26 @@ mod app {
         let state: supervisor::State = supervisor::State::Idle;
         let curr_leg: usize = 0;
         let num_samples_within_yaw_tolerance: usize = 0;
+        let turning_pid = pid::Pid::new(
+            tuning::TURNING_PID_KP,
+            tuning::TURNING_PID_KI,
+            tuning::TURNING_PID_KD,
+            tuning::TURNING_PID_P_LIM,
+            tuning::TURNING_PID_I_LIM,
+            tuning::TURNING_PID_D_LIM,
+            tuning::TURNING_PID_OUT_LIM,
+            0.0,
+        );
+        let yaw_compensation_pid = pid::Pid::new(
+            tuning::YAW_COMPENSATION_PID_KP,
+            tuning::YAW_COMPENSATION_PID_KI,
+            tuning::YAW_COMPENSATION_PID_KD,
+            tuning::YAW_COMPENSATION_PID_P_LIM,
+            tuning::YAW_COMPENSATION_PID_I_LIM,
+            tuning::YAW_COMPENSATION_PID_D_LIM,
+            tuning::YAW_COMPENSATION_PID_OUT_LIM,
+            0.0,
+        );
 
         writeln!(tx, "system initialized\r").unwrap();
 
@@ -287,6 +310,8 @@ mod app {
                 state,
                 curr_leg,
                 num_samples_within_yaw_tolerance,
+                turning_pid,
+                yaw_compensation_pid,
             },
             init::Monotonics(mono),
         )
@@ -304,10 +329,10 @@ mod app {
         fn speed_control(context: speed_control::Context);
     }
 
-    use crate::supervisor::supervisor;
+    use crate::supervisor::supervisor_task;
     extern "Rust" {
         #[task(local=[button, led, state, curr_leg, num_samples_within_yaw_tolerance, turning_pid, yaw_compensation_pid], shared=[motor_setpoints, tof_front_filter, imu_filter])]
-        fn supervisor(context: supervisor::Context);
+        fn supervisor_task(context: supervisor_task::Context);
     }
 
     #[idle]

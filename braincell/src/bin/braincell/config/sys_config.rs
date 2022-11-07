@@ -26,26 +26,7 @@ pub const MAX_DISTANCE_MM: u16 = 1800;
 pub const PITCH_LOWER_BOUND_DEG: f32 = -20.0;
 pub const PITCH_UPPER_BOUND_DEG: f32 = 20.0;
 
-// Linear speed profile function: v(x) = v_max * (1 - exp(-(x-offset)/tau))
-// where tau is the time constant, offset is the desired offset between the
-// robot center and the wall, and v_max is the max motor speed
-pub const LINEAR_SPEED_PROFILE_TAU_MM: f32 = 100.0;
-
 pub const YAW_TOLERANCE_DEG: f32 = 2.0;
 pub const YAW_SET_POINTS_DEG: [f32; NUM_LEGS_IN_RACE] = [
     0.0, -90.0, 180.0, 90.0, 0.0, -90.0, 180.0, 90.0, 0.0, -90.0, 180.0,
 ];
-
-pub const STEADY_STATE_NUM_SAMPLES: usize = 10;
-
-// Turning PID params
-pub const TURNING_PID_KP: f32 = 0.0;
-pub const TURNING_PID_KI: f32 = 0.0;
-pub const TURNING_PID_KD: f32 = 0.0;
-pub const TURNING_PID_OUTPUT_LIMIT: f32 = MAX_MOTOR_SPEED_DPS;
-
-// Yaw compensation PID params
-pub const YAW_COMPENSATION_PID_KP: f32 = 0.0;
-pub const YAW_COMPENSATION_PID_KI: f32 = 0.0;
-pub const YAW_COMPENSATION_PID_KD: f32 = 0.0;
-pub const YAW_COMPENSATION_PID_OUTPUT_LIMIT: f32 = MAX_MOTOR_SPEED_DPS;

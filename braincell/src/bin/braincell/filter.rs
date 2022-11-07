@@ -81,6 +81,19 @@ impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
             None => None,
         }
     }
+
+    pub fn reset(&mut self) {
+        self.accel_x.reset();
+        self.accel_y.reset();
+        self.accel_z.reset();
+        self.gyro_x.reset();
+        self.gyro_y.reset();
+        self.gyro_z.reset();
+        self.mag_x.reset();
+        self.mag_y.reset();
+        self.mag_z.reset();
+        self.ahrs_filter.reset();
+    }
 }
 
 pub fn filter_data(mut cx: filter_data::Context) {
