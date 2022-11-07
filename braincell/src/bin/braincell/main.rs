@@ -16,9 +16,9 @@ mod app {
     use cortex_m::asm;
     use panic_write::PanicHandler;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5, PB8, PB9},
+        gpio::{Alternate, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
         i2c::{I2c, Mode as i2cMode},
-        pac::{I2C1, SPI1, TIM1, TIM8, USART2},
+        pac::{I2C2, SPI1, TIM1, TIM8, USART2},
         prelude::*,
         serial::{Config, Serial, Tx},
         spi::{Mode, Phase, Polarity, Spi},
@@ -34,9 +34,9 @@ mod app {
 
     #[local]
     struct Local {
-        i2c: I2c<I2C1, (PB8, PB9)>,
+        i2c: I2c<I2C2, (PB10, PC12)>,
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
-        tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9>,
+        tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12>,
         imu: icm20948::ICM20948<
             Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
             Pin<'A', 4, Output<PushPull>>,
@@ -63,10 +63,10 @@ mod app {
         let gpioc = ctx.device.GPIOC.split();
 
         // configure I2C
-        let scl = gpiob.pb8;
-        let sda = gpiob.pb9;
+        let scl = gpiob.pb10;
+        let sda = gpioc.pc12;
         let mut i2c = I2c::new(
-            ctx.device.I2C1,
+            ctx.device.I2C2,
             (scl, sda),
             i2cMode::Standard {
                 frequency: 100.kHz(),
@@ -105,7 +105,7 @@ mod app {
         let mut tx = PanicHandler::new(serial);
 
         // set up ToF sensors
-        let tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9> =
+        let tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12> =
             match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_FRONT_ADDRESS) {
                 Ok(val) => val,
                 Err(_) => {
