@@ -4,12 +4,14 @@
 mod config;
 mod filter;
 mod motors;
+mod turning_test;
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
     use crate::config::sys_config;
     use crate::config::tuning;
     use crate::filter;
+    use pid;
     use braincell::controller;
     use braincell::drivers::encoder::n20;
     use braincell::drivers::imu::icm20948;
@@ -20,7 +22,7 @@ mod app {
     use cortex_m::asm;
     use panic_write::PanicHandler;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
+        gpio::{Alternate, Input, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12, PC13},
         i2c::{I2c, Mode as i2cMode},
         pac::{I2C2, SPI1, TIM1, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
         prelude::*,
@@ -61,6 +63,10 @@ mod app {
             n20::N20<Qei<TIM4, (Pin<'B', 6, Alternate<2>>, Pin<'B', 7, Alternate<2>>)>>,
         encoder_r_right:
             n20::N20<Qei<TIM5, (Pin<'A', 0, Alternate<2>>, Pin<'A', 1, Alternate<2>>)>>,
+        desired_yaw: f32,
+        num_samples_within_yaw_tolerance: u32,
+        currently_turning: bool,
+        button: Pin<'C', 13, Input>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -267,9 +273,18 @@ mod app {
         let encoder_f_right = n20::N20::new(encoder3_qei);
         let encoder_r_right = n20::N20::new(encoder4_qei);
 
+        // set up button
+        let button = gpioc.pc13.into_input();
+
+        // set up turning pid
+        let turning_pid = pid::Pid::new(0.0, 0.0, 0.0, 2640.0, 2640.0, 2640.0, 2640.0, 0.0);
+
         writeln!(tx, "system initialized\r").unwrap();
 
         let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
+        let desired_yaw: f32 = 0.0;
+        let num_samples_within_yaw_tolerance: u32 = 0;
+        let currently_turning: bool = false;
         filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
         speed_control::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
 
@@ -290,6 +305,11 @@ mod app {
                 encoder_r_left,
                 encoder_f_right,
                 encoder_r_right,
+                desired_yaw,
+                num_samples_within_yaw_tolerance,
+                currently_turning,
+                button,
+                turning_pid,
             },
             init::Monotonics(mono),
         )
@@ -305,6 +325,12 @@ mod app {
     extern "Rust" {
         #[task(local=[motors, encoder_f_left, encoder_r_left, encoder_f_right, encoder_r_right], shared=[tx, motor_setpoints])]
         fn speed_control(context: speed_control::Context);
+    }
+
+    use crate::turning_test::turning_test;
+    extern "Rust" {
+        #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button], shared=[imu_filter])]
+        fn turning_test(mut cx: turning_test::Context);
     }
 
     #[idle]
