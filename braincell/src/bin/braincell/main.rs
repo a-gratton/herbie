@@ -9,6 +9,7 @@ mod app {
     use crate::config::sys_config;
     use crate::filter;
     use braincell::drivers::imu::icm20948;
+    use braincell::drivers::motor::mdd3a;
     use braincell::drivers::tof::vl53l1x;
     use braincell::filtering::{ahrs::mahony, sma};
     use core::fmt::Write;
@@ -17,10 +18,11 @@ mod app {
     use stm32f4xx_hal::{
         gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5, PB8, PB9},
         i2c::{I2c, Mode as i2cMode},
-        pac::{I2C1, SPI1, USART2},
+        pac::{I2C1, SPI1, TIM1, TIM8, USART2},
         prelude::*,
         serial::{Config, Serial, Tx},
         spi::{Mode, Phase, Polarity, Spi},
+        timer::pwm::PwmChannel,
     };
     use systick_monotonic::{fugit::Duration, Systick};
 
@@ -40,6 +42,10 @@ mod app {
             Pin<'A', 4, Output<PushPull>>,
         >,
         filter_data_prev_ticks: u64,
+        motor1: mdd3a::MDD3A<PwmChannel<TIM1, 0>, PwmChannel<TIM1, 1>>,
+        motor2: mdd3a::MDD3A<PwmChannel<TIM1, 2>, PwmChannel<TIM1, 3>>,
+        motor3: mdd3a::MDD3A<PwmChannel<TIM8, 0>, PwmChannel<TIM8, 1>>,
+        motor4: mdd3a::MDD3A<PwmChannel<TIM8, 2>, PwmChannel<TIM8, 3>>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -52,8 +58,11 @@ mod app {
         let mono = Systick::new(ctx.core.SYST, 48_000_000);
         let clocks = rcc.cfgr.sysclk(48.MHz()).freeze();
 
-        // configure I2C
+        let gpioa = ctx.device.GPIOA.split();
         let gpiob = ctx.device.GPIOB.split();
+        let gpioc = ctx.device.GPIOC.split();
+
+        // configure I2C
         let scl = gpiob.pb8;
         let sda = gpiob.pb9;
         let mut i2c = I2c::new(
@@ -66,7 +75,6 @@ mod app {
         );
 
         // configure IMU spi and cs
-        let gpioa = ctx.device.GPIOA.split();
         let imu_cs = gpioa.pa4.into_push_pull_output();
         let imu_sclk = gpiob.pb3.into_alternate();
         let imu_mosi = gpiob.pb5.into_alternate();
@@ -177,6 +185,37 @@ mod app {
                 imu_gyro_bias,
             );
 
+        //set up PWM
+        let channels1 = (
+            gpioa.pa8.into_alternate(),
+            gpioa.pa9.into_alternate(),
+            gpioa.pa10.into_alternate(),
+            gpioa.pa11.into_alternate(),
+        );
+        let pwms1 = ctx.device.TIM1.pwm_hz(channels1, 20.kHz(), &clocks).split();
+        let pwm1 = (pwms1.0, pwms1.1);
+        let pwm2 = (pwms1.2, pwms1.3);
+
+        let channels2 = (
+            gpioc.pc6.into_alternate(),
+            gpioc.pc7.into_alternate(),
+            gpioc.pc8.into_alternate(),
+            gpioc.pc9.into_alternate(),
+        );
+        let pwms2 = ctx.device.TIM8.pwm_hz(channels2, 20.kHz(), &clocks).split();
+        let pwm3 = (pwms2.0, pwms2.1);
+        let pwm4 = (pwms2.2, pwms2.3);
+
+        let mut motor1 = mdd3a::MDD3A::new(pwm1);
+        let mut motor2 = mdd3a::MDD3A::new(pwm2);
+        let mut motor3 = mdd3a::MDD3A::new(pwm3);
+        let mut motor4 = mdd3a::MDD3A::new(pwm4);
+
+        motor1.start();
+        motor2.start();
+        motor3.start();
+        motor4.start();
+
         writeln!(tx, "system initialized\r").unwrap();
 
         let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
@@ -193,6 +232,10 @@ mod app {
                 tof_front,
                 imu,
                 filter_data_prev_ticks,
+                motor1,
+                motor2,
+                motor3,
+                motor4,
             },
             init::Monotonics(mono),
         )
