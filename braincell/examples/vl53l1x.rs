@@ -10,9 +10,9 @@ mod app {
     use core::fmt::Write;
     use panic_write::PanicHandler;
     use stm32f4xx_hal::{
-        gpio::{PB8, PB9},
+        gpio::{PB10, PC12},
         i2c::{I2c, Mode as i2cMode},
-        pac::{I2C1, USART2},
+        pac::{I2C2, USART2},
         prelude::*,
         serial::{Config, Serial, Tx},
     };
@@ -23,9 +23,9 @@ mod app {
 
     #[local]
     struct Local {
-        i2c: I2c<I2C1, (PB8, PB9)>,
+        i2c: I2c<I2C2, (PB10, PC12)>,
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
-        tof: vl53l1x::VL53L1<I2C1, PB8, PB9>,
+        tof: vl53l1x::VL53L1<I2C2, PB10, PC12>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -40,10 +40,11 @@ mod app {
 
         // configure I2C
         let gpiob = ctx.device.GPIOB.split();
-        let scl = gpiob.pb8;
-        let sda = gpiob.pb9;
+        let gpioc = ctx.device.GPIOC.split();
+        let scl = gpiob.pb10;
+        let sda = gpioc.pc12;
         let mut i2c = I2c::new(
-            ctx.device.I2C1,
+            ctx.device.I2C2,
             (scl, sda),
             i2cMode::Standard {
                 frequency: 100.kHz(),
@@ -68,7 +69,7 @@ mod app {
         let mut tx = PanicHandler::new(serial);
 
         // set up ToF sensor
-        let tof: vl53l1x::VL53L1<I2C1, PB8, PB9> = match vl53l1x::VL53L1::new(&mut i2c, 0x42) {
+        let tof: vl53l1x::VL53L1<I2C2, PB10, PC12> = match vl53l1x::VL53L1::new(&mut i2c, 0x42) {
             Ok(val) => val,
             Err(_) => {
                 writeln!(tx, "tof initialization failed\r").unwrap();
