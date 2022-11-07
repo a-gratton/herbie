@@ -1,6 +1,8 @@
+use crate::app::supervisor;
 use crate::config::sys_config;
-use core::fmt::Write;
-use libm::{absf, expf};
+use cortex_m::asm;
+use libm::{expf, fabsf};
+use num_traits::Num;
 use pid::Pid;
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
@@ -11,7 +13,7 @@ pub enum State {
     Turning,
 }
 
-fn within_range<T>(val: T, lower_bound: T, upper_bound: T) -> bool {
+fn within_range<T: core::cmp::PartialOrd>(val: T, lower_bound: T, upper_bound: T) -> bool {
     val > lower_bound && val < upper_bound
 }
 
@@ -19,10 +21,11 @@ fn within_range<T>(val: T, lower_bound: T, upper_bound: T) -> bool {
 // returns speed in deg/s
 fn linear_speed_profile(distance: f32) -> f32 {
     sys_config::MAX_MOTOR_SPEED_DPS
-        * (1 - expf(
-            -(distance - sys_config::DESIRED_OFFSET_TO_WALL_MM)
-                / sys_config::LINEAR_SPEED_PROFILE_TAU_MM,
-        ))
+        * (1.0
+            - expf(
+                -(distance - sys_config::DESIRED_OFFSET_TO_WALL_MM)
+                    / sys_config::LINEAR_SPEED_PROFILE_TAU_MM,
+            ))
 }
 
 // assume IMU is mounted upside down
@@ -32,9 +35,9 @@ fn linear_speed_profile(distance: f32) -> f32 {
 // + error means measured_yaw is to the right of desired_yaw
 fn compute_yaw_error(measured_yaw: f32, desired_yaw: f32) -> f32 {
     let error: f32 = measured_yaw - desired_yaw;
-    if absf(error) < 360.0 - absf(error) {
+    if fabsf(error) < 360.0 - fabsf(error) {
         error
-    } else if error > 0 {
+    } else if error > 0.0 {
         error - 360.0
     } else {
         error + 360.0
@@ -42,9 +45,12 @@ fn compute_yaw_error(measured_yaw: f32, desired_yaw: f32) -> f32 {
 }
 
 // pause the system if button is pressed
-fn block_if_button_pressed(&button: embedded_hal::digital::v2::InputPin) {
-    if button.is_low() {
-        while (button.is_low()) {
+fn block_if_button_pressed<P>(&button: &P)
+where
+    P: embedded_hal::digital::v2::InputPin,
+{
+    if button.is_low().unwrap_or(false) {
+        while button.is_low().unwrap_or(false) {
             asm::nop();
         }
     }
@@ -73,10 +79,10 @@ pub fn supervisor(mut cx: supervisor::Context) {
             });
             // check for button press and release
             if cx.local.button.is_low() {
-                while (cx.local.button.is_low()) {
+                while cx.local.button.is_low() {
                     asm::nop();
                 }
-                cx.local.curr_leg = 1;
+                cx.local.curr_leg = 0;
                 cx.local.led.set_low();
                 cx.local.state = State::Linear;
                 cx.local.yaw_compensation_pid.setpoint = 0.0; // set point for yaw error
@@ -90,15 +96,15 @@ pub fn supervisor(mut cx: supervisor::Context) {
             block_if_button_pressed(cx.local.button);
             // check if linear leg is complete
             if distance
-                < sys_config::DISTANCE_TO_WALL_THRESHOLDS_MM[curr_leg]
+                < sys_config::DISTANCE_TO_WALL_THRESHOLDS_MM[cx.local.curr_leg]
                     - sys_config::ROBOT_CENTER_TO_TOF_MM
                 && within_range(
                     pitch,
                     sys_config::PITCH_LOWER_BOUND_DEG,
-                    sys_config::PITCH_HIGHER_BOUND_DEG,
+                    sys_config::PITCH_UPPER_BOUND_DEG,
                 )
             {
-                if cx.local.curr_leg == sys_config::NUM_LEGS_IN_RACE {
+                if cx.local.curr_leg == sys_config::NUM_LEGS_IN_RACE - 1 {
                     // race is complete
                     cx.local.curr_leg = 0;
                     cx.local.state = State::Idle;
@@ -118,7 +124,7 @@ pub fn supervisor(mut cx: supervisor::Context) {
                 let yaw_compensated_speed_offset: f32 = cx
                     .local
                     .yaw_compensation_pid
-                    .next_control_output(absf(yaw_error));
+                    .next_control_output(fabsf(yaw_error));
                 let (right_side_speed, left_side_speed): (f32, f32) = {
                     if yaw_error > 0.0 {
                         // current heading to the right of center
@@ -140,7 +146,7 @@ pub fn supervisor(mut cx: supervisor::Context) {
             // check if yaw set point is reached
             let yaw_error: f32 =
                 compute_yaw_error(yaw, sys_config::YAW_SET_POINTS_DEG[cx.local.curr_leg]);
-            if absf(yaw_error) < sys_config::YAW_TOLERANCE_DEG {
+            if fabsf(yaw_error) < sys_config::YAW_TOLERANCE_DEG {
                 // check if steady state is reached
                 cx.local.num_samples_within_yaw_tolerance += 1;
                 if cx.local.num_samples_within_yaw_tolerance == sys_config::STEADY_STATE_NUM_SAMPLES

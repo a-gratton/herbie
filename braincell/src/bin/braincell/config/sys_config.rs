@@ -18,7 +18,7 @@ pub const NUM_LEGS_IN_RACE: usize = 11;
 pub const MAX_MOTOR_SPEED_DPS: f32 = 0.0;
 
 pub const ROBOT_CENTER_TO_TOF_MM: u16 = 100;
-pub const DESIRED_OFFSET_TO_WALL_MM: u16 = 150;
+pub const DESIRED_OFFSET_TO_WALL_MM: f32 = 150.0;
 pub const DISTANCE_TO_WALL_THRESHOLDS_MM: [u16; NUM_LEGS_IN_RACE] =
     [150, 150, 150, 450, 450, 450, 450, 750, 750, 750, 750];
 pub const MAX_DISTANCE_MM: u16 = 1800;
