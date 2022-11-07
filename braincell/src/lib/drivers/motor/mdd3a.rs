@@ -1,5 +1,12 @@
 use embedded_hal::PwmPin;
 
+pub trait Start {
+    fn start(&mut self);
+}
+pub trait SetPower {
+    fn set_power(&mut self, speed: f32);
+}
+
 pub struct MDD3A<PWM1, PWM2> {
     pwm: (PWM1, PWM2),
 }
@@ -11,18 +18,6 @@ where
 {
     pub fn new(tuple_pwm: (PWM1, PWM2)) -> Self {
         Self { pwm: tuple_pwm }
-    }
-
-    pub fn set_power(&mut self, speed: f32) {
-        let (speedx, speedy) = self.convert_pidout_to_power(speed);
-        self.pwm.0.set_duty(speedx);
-        self.pwm.1.set_duty(speedy);
-    }
-
-    pub fn start(&mut self) {
-        self.set_power(0.0);
-        self.pwm.0.enable();
-        self.pwm.1.enable();
     }
 
     fn get_max_duty(&mut self) -> (u16, u16) {
@@ -54,5 +49,27 @@ where
             let duty = (f * (md2 as f32) / 100.0) as u16; //truncate
             return (0, duty);
         }
+    }
+}
+impl<PWM1, PWM2> SetPower for MDD3A<PWM1, PWM2>
+where
+    PWM1: embedded_hal::PwmPin + PwmPin<Duty = u16>,
+    PWM2: embedded_hal::PwmPin + PwmPin<Duty = u16>,
+{
+    fn set_power(&mut self, speed: f32) {
+        let (speedx, speedy) = self.convert_pidout_to_power(speed);
+        self.pwm.0.set_duty(speedx);
+        self.pwm.1.set_duty(speedy);
+    }
+}
+impl<PWM1, PWM2> Start for MDD3A<PWM1, PWM2>
+where
+    PWM1: embedded_hal::PwmPin + PwmPin<Duty = u16>,
+    PWM2: embedded_hal::PwmPin + PwmPin<Duty = u16>,
+{
+    fn start(&mut self) {
+        self.set_power(0.0);
+        self.pwm.0.enable();
+        self.pwm.1.enable();
     }
 }
