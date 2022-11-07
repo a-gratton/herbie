@@ -79,7 +79,7 @@ pub fn supervisor(mut cx: supervisor::Context) {
                 cx.local.curr_leg = 1;
                 cx.local.led.set_low();
                 cx.local.state = State::Linear;
-                cx.local.yaw_compensation_pid.setpoint = 0.0;
+                cx.local.yaw_compensation_pid.setpoint = 0.0; // set point for yaw error
                 cx.shared
                     .tof_front_filter
                     .lock(|tof_front_filter| tof_front_filter.reset());
