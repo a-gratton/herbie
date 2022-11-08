@@ -1,0 +1,2 @@
+pub const OVERFLOW_TH_32BIT: u64 = 100000;
+pub const OVERFLOW_TH_16BIT: u64 = 50000;
