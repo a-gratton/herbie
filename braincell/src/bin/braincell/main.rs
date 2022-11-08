@@ -3,11 +3,14 @@
 
 mod config;
 mod filter;
+mod motors;
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
     use crate::config::sys_config;
+    use crate::config::tuning;
     use crate::filter;
+    use braincell::controller;
     use braincell::drivers::imu::icm20948;
     use braincell::drivers::motor::mdd3a;
     use braincell::drivers::tof::vl53l1x;
@@ -16,9 +19,9 @@ mod app {
     use cortex_m::asm;
     use panic_write::PanicHandler;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5, PB8, PB9},
+        gpio::{Alternate, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
         i2c::{I2c, Mode as i2cMode},
-        pac::{I2C1, SPI1, TIM1, TIM8, USART2},
+        pac::{I2C2, SPI1, TIM1, TIM8, USART2},
         prelude::*,
         serial::{Config, Serial, Tx},
         spi::{Mode, Phase, Polarity, Spi},
@@ -28,24 +31,28 @@ mod app {
 
     #[shared]
     struct Shared {
-        tof_front_filter: sma::SmaFilter<u16, 10>,
+        tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         imu_filter: filter::ImuFilter<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
+        tof_front_filter: sma::SmaFilter<u16, 10>,
+        motor_setpoints: controller::motor::MotorSetPoints,
+        motor_velocities: controller::motor::VelocityMeasurement,
     }
 
     #[local]
     struct Local {
-        i2c: I2c<I2C1, (PB8, PB9)>,
-        tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
-        tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9>,
+        i2c: I2c<I2C2, (PB10, PC12)>,
+        tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12>,
         imu: icm20948::ICM20948<
             Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
             Pin<'A', 4, Output<PushPull>>,
         >,
         filter_data_prev_ticks: u64,
-        motor1: mdd3a::MDD3A<PwmChannel<TIM1, 0>, PwmChannel<TIM1, 1>>,
-        motor2: mdd3a::MDD3A<PwmChannel<TIM1, 2>, PwmChannel<TIM1, 3>>,
-        motor3: mdd3a::MDD3A<PwmChannel<TIM8, 0>, PwmChannel<TIM8, 1>>,
-        motor4: mdd3a::MDD3A<PwmChannel<TIM8, 2>, PwmChannel<TIM8, 3>>,
+        motors: controller::motor::Motors<
+            mdd3a::MDD3A<PwmChannel<TIM1, 0>, PwmChannel<TIM1, 1>>,
+            mdd3a::MDD3A<PwmChannel<TIM1, 2>, PwmChannel<TIM1, 3>>,
+            mdd3a::MDD3A<PwmChannel<TIM8, 0>, PwmChannel<TIM8, 1>>,
+            mdd3a::MDD3A<PwmChannel<TIM8, 2>, PwmChannel<TIM8, 3>>,
+        >,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -63,10 +70,10 @@ mod app {
         let gpioc = ctx.device.GPIOC.split();
 
         // configure I2C
-        let scl = gpiob.pb8;
-        let sda = gpiob.pb9;
+        let scl = gpiob.pb10;
+        let sda = gpioc.pc12;
         let mut i2c = I2c::new(
-            ctx.device.I2C1,
+            ctx.device.I2C2,
             (scl, sda),
             i2cMode::Standard {
                 frequency: 100.kHz(),
@@ -105,7 +112,7 @@ mod app {
         let mut tx = PanicHandler::new(serial);
 
         // set up ToF sensors
-        let tof_front: vl53l1x::VL53L1<I2C1, PB8, PB9> =
+        let tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12> =
             match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_FRONT_ADDRESS) {
                 Ok(val) => val,
                 Err(_) => {
@@ -206,36 +213,50 @@ mod app {
         let pwm3 = (pwms2.0, pwms2.1);
         let pwm4 = (pwms2.2, pwms2.3);
 
-        let mut motor1 = mdd3a::MDD3A::new(pwm1);
-        let mut motor2 = mdd3a::MDD3A::new(pwm2);
-        let mut motor3 = mdd3a::MDD3A::new(pwm3);
-        let mut motor4 = mdd3a::MDD3A::new(pwm4);
+        let motor_f_left = mdd3a::MDD3A::new(pwm1);
+        let motor_r_left = mdd3a::MDD3A::new(pwm2);
+        let motor_f_right = mdd3a::MDD3A::new(pwm3);
+        let motor_r_right = mdd3a::MDD3A::new(pwm4);
 
-        motor1.start();
-        motor2.start();
-        motor3.start();
-        motor4.start();
+        let tune: controller::pid_params::TuningParams = controller::pid_params::TuningParams {
+            kp: tuning::MOTOR_KP,
+            ki: tuning::MOTOR_KI,
+            kd: tuning::MOTOR_KD,
+            p_lim: tuning::MOTOR_P_LIM,
+            i_lim: tuning::MOTOR_I_LIM,
+            d_lim: tuning::MOTOR_D_LIM,
+            out_lim: tuning::MOTOR_OUT_LIM,
+        };
+        let motors = controller::motor::Motors::new(
+            motor_f_left,
+            motor_r_left,
+            motor_f_right,
+            motor_r_right,
+            tune,
+        );
+        let motor_setpoints = controller::motor::MotorSetPoints::default();
+        let motor_velocities = controller::motor::VelocityMeasurement::default();
 
         writeln!(tx, "system initialized\r").unwrap();
 
         let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
         filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+        speed_control::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
 
         (
             Shared {
+                tx,
                 tof_front_filter,
                 imu_filter,
+                motor_setpoints,
+                motor_velocities,
             },
             Local {
                 i2c,
-                tx,
                 tof_front,
                 imu,
                 filter_data_prev_ticks,
-                motor1,
-                motor2,
-                motor3,
-                motor4,
+                motors,
             },
             init::Monotonics(mono),
         )
@@ -243,8 +264,14 @@ mod app {
 
     use crate::filter::filter_data;
     extern "Rust" {
-        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[tof_front_filter, imu_filter])]
+        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[tx, imu_filter, tof_front_filter])]
         fn filter_data(mut cx: filter_data::Context);
+    }
+
+    use crate::motors::speed_control;
+    extern "Rust" {
+        #[task(local=[motors], shared=[tx, motor_setpoints, motor_velocities])]
+        fn speed_control(context: speed_control::Context);
     }
 
     #[idle]
