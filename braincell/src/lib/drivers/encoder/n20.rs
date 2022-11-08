@@ -2,18 +2,18 @@ use crate::drivers::encoder::n20_constants::*;
 use embedded_hal::Direction as RotaryDirection;
 use stm32f4xx_hal::prelude::_embedded_hal_Qei;
 
-pub struct N20<X> {
-    encoder: X,
+pub struct N20<QEI> {
+    encoder: QEI,
     pastsec: f32,
     pastcount: u64,
 }
 
-impl<X> N20<X>
+impl<QEI> N20<QEI>
 where
-    X: _embedded_hal_Qei,
-    u32: From<<X as _embedded_hal_Qei>::Count>,
+    QEI: _embedded_hal_Qei,
+    u32: From<<QEI as _embedded_hal_Qei>::Count>,
 {
-    pub fn new(qei: X) -> Self {
+    pub fn new(qei: QEI) -> Self {
         Self {
             encoder: qei,
             pastsec: 0.0,
@@ -25,7 +25,7 @@ where
         let count = self.encoder.count();
 
         //convert Qei::Count to u64
-        let currcount = <<X as _embedded_hal_Qei>::Count as Into<u32>>::into(count) as u64;
+        let currcount = <<QEI as _embedded_hal_Qei>::Count as Into<u32>>::into(count) as u64;
 
         //obtain the difference in counts while taking into account overflow of 16bit and 32bit timers
         let mut countdiff: u64;
