@@ -86,10 +86,10 @@ mod app {
             ctx.device.TIM5,
             (gpioa.pa0.into_alternate(), gpioa.pa1.into_alternate()),
         );
-        let mut encoder1 = n20::N20::new(encoder1_qei);
-        let mut encoder2 = n20::N20::new(encoder2_qei);
-        let mut encoder3 = n20::N20::new(encoder3_qei);
-        let mut encoder4 = n20::N20::new(encoder4_qei);
+        let encoder1 = n20::N20::new(encoder1_qei);
+        let encoder2 = n20::N20::new(encoder2_qei);
+        let encoder3 = n20::N20::new(encoder3_qei);
+        let encoder4 = n20::N20::new(encoder4_qei);
 
         //set up PWM
         let channels1 = (
