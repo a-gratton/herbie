@@ -23,7 +23,6 @@ mod app {
     use stm32f4xx_hal::gpio::Pin;
     use stm32f4xx_hal::gpio::Alternate;
 
-
     #[shared]
     struct Shared {}
 
@@ -70,6 +69,7 @@ mod app {
 
         let mut tx = PanicHandler::new(serial);
 
+        //setup encoders
         let encoder1_pins = (gpioa.pa15.into_alternate(), gpiob.pb9.into_alternate());
         let encoder2_pins = (gpioa.pa6.into_alternate(), gpioa.pa7.into_alternate());
         let encoder3_pins = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate());
@@ -115,15 +115,11 @@ mod app {
         let mut motor3 = mdd3a::MDD3A::new(pwm3);
         let mut motor4 = mdd3a::MDD3A::new(pwm4);
 
+        //default pwm channels are not enabled
         //motor1.start();
         //motor2.start();
         //motor3.start();
         //motor4.start();
-
-        //motor1.set_power(70.0);
-        //motor2.set_power(70.0);
-        //motor3.set_power(70.0);
-        //motor4.set_power(70.0);
 
         writeln!(tx, "system initialized\r").unwrap();
 
@@ -150,25 +146,21 @@ mod app {
 
         //let start: u64 = monotonics::now().ticks();
 
-        //while monotonics::now().ticks() - start < 3000 {
+        //cx.local.motor1.set_power(-70.0);
+        //cx.local.motor2.set_power(-70.0);
+        //cx.local.motor3.set_power(70.0);
+        //cx.local.motor4.set_power(70.0);
 
-            //cx.local.motor1.set_power(70.0);
-            //cx.local.motor2.set_power(70.0);
-            //cx.local.motor3.set_power(70.0);
-            //cx.local.motor4.set_power(70.0);
-
-            let timeis: u64 = monotonics::now().ticks();
-            let new_count1 = cx.local.encoder1.get_speed(timeis);
-            //writeln!(cx.local.tx, "enc1: {new_count1}\r").unwrap();
-            let new_count2 = cx.local.encoder2.get_speed(timeis);
-            //writeln!(cx.local.tx, "enc2: {new_count2}\r").unwrap();
-            let new_count3 = cx.local.encoder3.get_speed(timeis);
-            //writeln!(cx.local.tx, "enc3: {new_count3}\r").unwrap();
-            let new_count4 = cx.local.encoder4.get_speed(timeis);
-            writeln!(cx.local.tx, "enc4: {new_count4}\r").unwrap();
-            asm::delay(1000000);
-
-        //}
+        let timeis: f32 = monotonics::now().ticks() as f32 * 0.001;
+        let new_count1 = cx.local.encoder1.get_speed(timeis);
+        writeln!(cx.local.tx, "enc1: {new_count1}\r").unwrap();
+        let new_count2 = cx.local.encoder2.get_speed(timeis);
+        writeln!(cx.local.tx, "enc2: {new_count2}\r").unwrap();
+        let new_count3 = cx.local.encoder3.get_speed(timeis);
+        writeln!(cx.local.tx, "enc3: {new_count3}\r").unwrap();
+        let new_count4 = cx.local.encoder4.get_speed(timeis);
+        writeln!(cx.local.tx, "enc4: {new_count4}\r").unwrap();
+        asm::delay(1000000);
 
         //cx.local.motor2.set_power(0.0);
         //cx.local.motor3.set_power(0.0);
