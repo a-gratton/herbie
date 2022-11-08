@@ -43,11 +43,20 @@ where
         self.r_right.set_speed_target(targets.r_right);
     }
 
-    pub fn step(&mut self, vels: &VelocityMeasurement) {
-        self.f_left.step(vels.f_left);
-        self.r_left.step(vels.r_left);
-        self.f_right.step(vels.f_right);
-        self.r_right.step(vels.r_right);
+    pub fn step(&mut self, vels: &VelocityMeasurement) -> (f32, f32, f32, f32) {
+        (
+            self.f_left.step(vels.f_left),
+            self.r_left.step(vels.r_left),
+            self.f_right.step(vels.f_right),
+            self.r_right.step(vels.r_right),
+        )
+    }
+
+    pub fn stop(&mut self) {
+        self.f_left.stop();
+        self.r_left.stop();
+        self.f_right.stop();
+        self.r_right.stop();
     }
 }
 
@@ -74,17 +83,22 @@ where
         self.pid.setpoint = target;
     }
 
-    fn step(&mut self, current_velocity: f32) {
+    fn step(&mut self, current_velocity: f32) -> f32 {
         let output = self.pid.next_control_output(current_velocity);
         self.motor.set_power(output.output);
+        return output.output;
+    }
+
+    fn stop(&mut self) {
+        self.motor.set_power(0.0);
     }
 }
 
 pub struct VelocityMeasurement {
-    f_left: f32,
-    r_left: f32,
-    f_right: f32,
-    r_right: f32,
+    pub f_left: f32,
+    pub r_left: f32,
+    pub f_right: f32,
+    pub r_right: f32,
 }
 impl IntoIterator for VelocityMeasurement {
     type Item = f32;
