@@ -24,7 +24,7 @@ fn compute_yaw_error(measured_yaw: f32, desired_yaw: f32) -> f32 {
 }
 
 pub fn turning_test(mut cx: turning_test::Context) {
-    let yaw: f32 = 0.0;
+    let mut yaw: f32 = 0.0;
     cx.shared
         .imu_filter
         .lock(|imu_filter| (_, _, yaw) = imu_filter.filtered().unwrap_or((0.0, 0.0, 0.0))); // IMU is mounted sideways -> swap pitch and roll
@@ -44,10 +44,12 @@ pub fn turning_test(mut cx: turning_test::Context) {
                 *cx.local.num_samples_within_yaw_tolerance += 1;
                 if *cx.local.num_samples_within_yaw_tolerance == STEADY_STATE_NUM_SAMPLES {
                     *cx.local.currently_turning = false;
-                    motor_setpoints.f_right = 0.0;
-                    motor_setpoints.r_right = 0.0;
-                    motor_setpoints.f_left = 0.0;
-                    motor_setpoints.r_left = 0.0;
+                    cx.shared.motor_setpoints.lock(|motor_setpoints| {
+                        motor_setpoints.f_right = 0.0;
+                        motor_setpoints.r_right = 0.0;
+                        motor_setpoints.f_left = 0.0;
+                        motor_setpoints.r_left = 0.0;
+                    });
                 }
             } else {
                 *cx.local.num_samples_within_yaw_tolerance = 0;
@@ -55,10 +57,12 @@ pub fn turning_test(mut cx: turning_test::Context) {
                 let base_speed: f32 = cx.local.turning_pid.next_control_output(yaw_error).output;
                 let (right_side_speed, left_side_speed): (f32, f32) = (-base_speed, base_speed);
                 // set motor set points
-                motor_setpoints.f_right = right_side_speed;
-                motor_setpoints.r_right = right_side_speed;
-                motor_setpoints.f_left = left_side_speed;
-                motor_setpoints.r_left = left_side_speed;
+                cx.shared.motor_setpoints.lock(|motor_setpoints| {
+                    motor_setpoints.f_right = right_side_speed;
+                    motor_setpoints.r_right = right_side_speed;
+                    motor_setpoints.f_left = left_side_speed;
+                    motor_setpoints.r_left = left_side_speed;
+                });
             }
         }
     } else if cx.local.button.is_low() {

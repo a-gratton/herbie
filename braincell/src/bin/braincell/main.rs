@@ -22,7 +22,7 @@ mod app {
     use cortex_m::asm;
     use panic_write::PanicHandler;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Input, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12, PC13},
+        gpio::{Alternate, Input, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
         i2c::{I2c, Mode as i2cMode},
         pac::{I2C2, SPI1, TIM1, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
         prelude::*,
@@ -67,6 +67,7 @@ mod app {
         num_samples_within_yaw_tolerance: u32,
         currently_turning: bool,
         button: Pin<'C', 13, Input>,
+        turning_pid: pid::Pid<f32>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -329,7 +330,7 @@ mod app {
 
     use crate::turning_test::turning_test;
     extern "Rust" {
-        #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button], shared=[imu_filter])]
+        #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button, turning_pid], shared=[imu_filter, motor_setpoints])]
         fn turning_test(mut cx: turning_test::Context);
     }
 
