@@ -244,20 +244,22 @@ mod app {
         let motor_velocities = controller::motor::VelocityMeasurement::default();
 
         //setup encoders
-        let encoder1_pins = (gpioa.pa15.into_alternate(), gpiob.pb9.into_alternate());
-        let encoder2_pins = (gpioa.pa6.into_alternate(), gpioa.pa7.into_alternate());
-        let encoder3_pins = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate());
-        let encoder4_pins = (gpioa.pa0.into_alternate(), gpioa.pa1.into_alternate());
-
-        let encoder1_timer = ctx.device.TIM2;
-        let encoder2_timer = ctx.device.TIM3;
-        let encoder3_timer = ctx.device.TIM4;
-        let encoder4_timer = ctx.device.TIM5;
-
-        let encoder1_qei = Qei::new(encoder1_timer, encoder1_pins);
-        let encoder2_qei = Qei::new(encoder2_timer, encoder2_pins);
-        let encoder3_qei = Qei::new(encoder3_timer, encoder3_pins);
-        let encoder4_qei = Qei::new(encoder4_timer, encoder4_pins);
+        let encoder1_qei = Qei::new(
+            ctx.device.TIM2,
+            (gpioa.pa15.into_alternate(), gpiob.pb9.into_alternate()),
+        );
+        let encoder2_qei = Qei::new(
+            ctx.device.TIM3,
+            (gpioa.pa6.into_alternate(), gpioa.pa7.into_alternate()),
+        );
+        let encoder3_qei = Qei::new(
+            ctx.device.TIM4,
+            (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate()),
+        );
+        let encoder4_qei = Qei::new(
+            ctx.device.TIM5,
+            (gpioa.pa0.into_alternate(), gpioa.pa1.into_alternate()),
+        );
         let mut encoder1 = n20::N20::new(encoder1_qei);
         let mut encoder2 = n20::N20::new(encoder2_qei);
         let mut encoder3 = n20::N20::new(encoder3_qei);
