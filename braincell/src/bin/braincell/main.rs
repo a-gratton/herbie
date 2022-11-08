@@ -14,6 +14,7 @@ mod app {
     use braincell::drivers::imu::icm20948;
     use braincell::drivers::motor::mdd3a;
     use braincell::drivers::tof::vl53l1x;
+    use braincell::drivers::encoder::n20;
     use braincell::filtering::{ahrs::mahony, sma};
     use core::fmt::Write;
     use cortex_m::asm;
@@ -21,9 +22,10 @@ mod app {
     use stm32f4xx_hal::{
         gpio::{Alternate, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
         i2c::{I2c, Mode as i2cMode},
-        pac::{I2C2, SPI1, TIM1, TIM8, USART2},
+        pac::{I2C2, SPI1, TIM1, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
         prelude::*,
         serial::{Config, Serial, Tx},
+        qei::Qei,
         spi::{Mode, Phase, Polarity, Spi},
         timer::pwm::PwmChannel,
     };
@@ -53,6 +55,10 @@ mod app {
             mdd3a::MDD3A<PwmChannel<TIM8, 0>, PwmChannel<TIM8, 1>>,
             mdd3a::MDD3A<PwmChannel<TIM8, 2>, PwmChannel<TIM8, 3>>,
         >,
+        encoder1: n20::N20<Qei<TIM2, (Pin<'A', 15, Alternate<1>>, Pin<'B', 9, Alternate<1>>)>>,
+        encoder2: n20::N20<Qei<TIM3, (Pin<'A', 6, Alternate<2>>, Pin<'A', 7, Alternate<2>>)>>,
+        encoder3: n20::N20<Qei<TIM4, (Pin<'B', 6, Alternate<2>>, Pin<'B', 7, Alternate<2>>)>>,
+        encoder4: n20::N20<Qei<TIM5, (Pin<'A', 0, Alternate<2>>, Pin<'A', 1, Alternate<2>>)>>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -237,6 +243,26 @@ mod app {
         let motor_setpoints = controller::motor::MotorSetPoints::default();
         let motor_velocities = controller::motor::VelocityMeasurement::default();
 
+        //setup encoders
+        let encoder1_pins = (gpioa.pa15.into_alternate(), gpiob.pb9.into_alternate());
+        let encoder2_pins = (gpioa.pa6.into_alternate(), gpioa.pa7.into_alternate());
+        let encoder3_pins = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate());
+        let encoder4_pins = (gpioa.pa0.into_alternate(), gpioa.pa1.into_alternate());
+    
+        let encoder1_timer = ctx.device.TIM2;
+        let encoder2_timer = ctx.device.TIM3;
+        let encoder3_timer = ctx.device.TIM4;
+        let encoder4_timer = ctx.device.TIM5;
+    
+        let encoder1_qei = Qei::new(encoder1_timer, encoder1_pins);
+        let encoder2_qei = Qei::new(encoder2_timer, encoder2_pins);
+        let encoder3_qei = Qei::new(encoder3_timer, encoder3_pins);
+        let encoder4_qei = Qei::new(encoder4_timer, encoder4_pins);
+        let mut encoder1 = n20::N20::new(encoder1_qei);
+        let mut encoder2 = n20::N20::new(encoder2_qei);
+        let mut encoder3 = n20::N20::new(encoder3_qei);
+        let mut encoder4 = n20::N20::new(encoder4_qei);
+
         writeln!(tx, "system initialized\r").unwrap();
 
         let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
@@ -257,6 +283,10 @@ mod app {
                 imu,
                 filter_data_prev_ticks,
                 motors,
+                encoder1,
+                encoder2,
+                encoder3,
+                encoder4,
             },
             init::Monotonics(mono),
         )
