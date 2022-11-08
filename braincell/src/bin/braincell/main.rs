@@ -241,6 +241,7 @@ mod app {
             motor_f_right,
             motor_r_right,
             tune,
+            sys_config::MOTOR_DIRECTIONS,
         );
         let motor_setpoints = controller::motor::MotorSetPoints::default();
 
