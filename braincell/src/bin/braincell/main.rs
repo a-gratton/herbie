@@ -11,10 +11,10 @@ mod app {
     use crate::config::tuning;
     use crate::filter;
     use braincell::controller;
+    use braincell::drivers::encoder::n20;
     use braincell::drivers::imu::icm20948;
     use braincell::drivers::motor::mdd3a;
     use braincell::drivers::tof::vl53l1x;
-    use braincell::drivers::encoder::n20;
     use braincell::filtering::{ahrs::mahony, sma};
     use core::fmt::Write;
     use cortex_m::asm;
@@ -24,8 +24,8 @@ mod app {
         i2c::{I2c, Mode as i2cMode},
         pac::{I2C2, SPI1, TIM1, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
         prelude::*,
-        serial::{Config, Serial, Tx},
         qei::Qei,
+        serial::{Config, Serial, Tx},
         spi::{Mode, Phase, Polarity, Spi},
         timer::pwm::PwmChannel,
     };
@@ -248,12 +248,12 @@ mod app {
         let encoder2_pins = (gpioa.pa6.into_alternate(), gpioa.pa7.into_alternate());
         let encoder3_pins = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate());
         let encoder4_pins = (gpioa.pa0.into_alternate(), gpioa.pa1.into_alternate());
-    
+
         let encoder1_timer = ctx.device.TIM2;
         let encoder2_timer = ctx.device.TIM3;
         let encoder3_timer = ctx.device.TIM4;
         let encoder4_timer = ctx.device.TIM5;
-    
+
         let encoder1_qei = Qei::new(encoder1_timer, encoder1_pins);
         let encoder2_qei = Qei::new(encoder2_timer, encoder2_pins);
         let encoder3_qei = Qei::new(encoder3_timer, encoder3_pins);

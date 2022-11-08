@@ -7,21 +7,20 @@ mod app {
     use braincell::drivers::motor::mdd3a;
 
     use cortex_m::asm;
-    
+
     use core::fmt::Write;
     use panic_write::PanicHandler;
+    use stm32f4xx_hal::gpio::Alternate;
+    use stm32f4xx_hal::gpio::Pin;
     use stm32f4xx_hal::{
         pac::USART2,
         pac::{TIM1, TIM2, TIM3, TIM4, TIM5, TIM8},
         prelude::*,
-        serial::{Config, Serial, Tx},
         qei::Qei,
+        serial::{Config, Serial, Tx},
         timer::pwm::PwmChannel,
-        
     };
     use systick_monotonic::{fugit::Duration, Systick};
-    use stm32f4xx_hal::gpio::Pin;
-    use stm32f4xx_hal::gpio::Alternate;
 
     #[shared]
     struct Shared {}
@@ -37,7 +36,6 @@ mod app {
         motor2: mdd3a::MDD3A<PwmChannel<TIM1, 2>, PwmChannel<TIM1, 3>>,
         motor3: mdd3a::MDD3A<PwmChannel<TIM8, 0>, PwmChannel<TIM8, 1>>,
         motor4: mdd3a::MDD3A<PwmChannel<TIM8, 2>, PwmChannel<TIM8, 3>>,
-
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -74,12 +72,12 @@ mod app {
         let encoder2_pins = (gpioa.pa6.into_alternate(), gpioa.pa7.into_alternate());
         let encoder3_pins = (gpiob.pb6.into_alternate(), gpiob.pb7.into_alternate());
         let encoder4_pins = (gpioa.pa0.into_alternate(), gpioa.pa1.into_alternate());
-    
+
         let encoder1_timer = ctx.device.TIM2;
         let encoder2_timer = ctx.device.TIM3;
         let encoder3_timer = ctx.device.TIM4;
         let encoder4_timer = ctx.device.TIM5;
-    
+
         let encoder1_qei = Qei::new(encoder1_timer, encoder1_pins);
         let encoder2_qei = Qei::new(encoder2_timer, encoder2_pins);
         let encoder3_qei = Qei::new(encoder3_timer, encoder3_pins);
@@ -143,7 +141,6 @@ mod app {
 
     #[task(local=[tx, encoder1, encoder2, encoder3, encoder4, motor1, motor2, motor3, motor4], shared=[])]
     fn read_speed(cx: read_speed::Context) {
-
         //let start: u64 = monotonics::now().ticks();
 
         //cx.local.motor1.set_power(-70.0);
@@ -166,7 +163,6 @@ mod app {
         //cx.local.motor3.set_power(0.0);
         //cx.local.motor4.set_power(0.0);
         //cx.local.motor1.set_power(0.0);
-        
 
         // run at 100 Hz
         read_speed::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();

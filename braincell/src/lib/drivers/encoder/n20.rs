@@ -1,16 +1,17 @@
+use crate::drivers::encoder::n20_constants::*;
 use embedded_hal::Direction as RotaryDirection;
 use stm32f4xx_hal::prelude::_embedded_hal_Qei;
-use crate::drivers::encoder::n20_constants::*;
 
-pub struct N20 <X> {
+pub struct N20<X> {
     encoder: X,
     pastsec: f32,
     pastcount: u64,
 }
 
-impl<X> N20<X> 
+impl<X> N20<X>
 where
-X: _embedded_hal_Qei, u32: From<<X as _embedded_hal_Qei>::Count>
+    X: _embedded_hal_Qei,
+    u32: From<<X as _embedded_hal_Qei>::Count>,
 {
     pub fn new(qei: X) -> Self {
         Self {
@@ -19,7 +20,7 @@ X: _embedded_hal_Qei, u32: From<<X as _embedded_hal_Qei>::Count>
             pastcount: 0,
         }
     }
-     pub fn get_speed(&mut self, currsec: f32) -> f32 {
+    pub fn get_speed(&mut self, currsec: f32) -> f32 {
         //get current count on encoder
         let count = self.encoder.count();
 
@@ -27,7 +28,7 @@ X: _embedded_hal_Qei, u32: From<<X as _embedded_hal_Qei>::Count>
         let currcount = <<X as _embedded_hal_Qei>::Count as Into<u32>>::into(count) as u64;
 
         //obtain the difference in counts while taking into account overflow of 16bit and 32bit timers
-        let mut countdiff:u64;
+        let mut countdiff: u64;
         if currcount > self.pastcount {
             countdiff = currcount - self.pastcount;
             if countdiff > OVERFLOW_TH_32BIT {
@@ -51,8 +52,7 @@ X: _embedded_hal_Qei, u32: From<<X as _embedded_hal_Qei>::Count>
         let degreeselapsed = countdiff as f32 / COUNTS_PER_REVOLUTION * 360.0;
         let timediff = currsec - self.pastsec;
 
-        let degreespersecond = degreeselapsed/timediff;
-        
+        let degreespersecond = degreeselapsed / timediff;
 
         self.pastsec = currsec;
         self.pastcount = currcount;
@@ -63,6 +63,5 @@ X: _embedded_hal_Qei, u32: From<<X as _embedded_hal_Qei>::Count>
         }
 
         return degreespersecond;
-
-     }
+    }
 }
