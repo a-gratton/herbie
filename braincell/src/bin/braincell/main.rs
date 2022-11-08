@@ -5,13 +5,13 @@ mod config;
 mod filter;
 mod motors;
 mod turning_test;
+// mod linear_test;
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
 mod app {
     use crate::config::sys_config;
     use crate::config::tuning;
     use crate::filter;
-    use pid;
     use braincell::controller;
     use braincell::drivers::encoder::n20;
     use braincell::drivers::imu::icm20948;
@@ -21,6 +21,7 @@ mod app {
     use core::fmt::Write;
     use cortex_m::asm;
     use panic_write::PanicHandler;
+    use pid;
     use stm32f4xx_hal::{
         gpio::{Alternate, Input, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
         i2c::{I2c, Mode as i2cMode},
@@ -66,8 +67,11 @@ mod app {
         desired_yaw: f32,
         num_samples_within_yaw_tolerance: u32,
         currently_turning: bool,
+        currently_running: bool,
         button: Pin<'C', 13, Input>,
         turning_pid: pid::Pid<f32>,
+        yaw_compensation_pid: pid::Pid<f32>,
+        start_ticks: u64,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -278,7 +282,11 @@ mod app {
         let button = gpioc.pc13.into_input();
 
         // set up turning pid
-        let turning_pid = pid::Pid::new(0.0, 0.0, 0.0, 2640.0, 2640.0, 2640.0, 2640.0, 0.0);
+        let turning_pid = pid::Pid::new(0.0, 0.0, 0.0, 1320.0, 1320.0, 1320.0, 1320.0, 0.0);
+
+        // set up linear pid
+        let yaw_compensation_pid =
+            pid::Pid::new(0.0, 0.0, 0.0, 1320.0, 1320.0, 1320.0, 1320.0, 0.0);
 
         writeln!(tx, "system initialized\r").unwrap();
 
@@ -286,6 +294,8 @@ mod app {
         let desired_yaw: f32 = 0.0;
         let num_samples_within_yaw_tolerance: u32 = 0;
         let currently_turning: bool = false;
+        let currently_running: bool = false;
+        let start_ticks = monotonics::now().ticks();
         filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
         speed_control::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
 
@@ -309,8 +319,11 @@ mod app {
                 desired_yaw,
                 num_samples_within_yaw_tolerance,
                 currently_turning,
+                currently_running,
                 button,
                 turning_pid,
+                yaw_compensation_pid,
+                start_ticks,
             },
             init::Monotonics(mono),
         )
@@ -328,10 +341,16 @@ mod app {
         fn speed_control(context: speed_control::Context);
     }
 
-    use crate::turning_test::turning_test;
+    // use crate::linear_test::linear_test_task;
+    // extern "Rust" {
+    //     #[task(local=[desired_yaw, currently_running, button, yaw_compensation_pid, start_ticks], shared=[imu_filter, motor_setpoints])]
+    //     fn linear_test_task(mut cx: linear_test_task::Context);
+    // }
+
+    use crate::turning_test::turning_test_task;
     extern "Rust" {
         #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button, turning_pid], shared=[imu_filter, motor_setpoints])]
-        fn turning_test(mut cx: turning_test::Context);
+        fn turning_test_task(mut cx: turning_test_task::Context);
     }
 
     #[idle]

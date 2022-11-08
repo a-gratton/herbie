@@ -1,11 +1,11 @@
-use crate::app::turning_test;
+use crate::app::turning_test_task;
 use cortex_m::asm;
 use libm::fabsf;
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
 
 const YAW_TOLERANCE_DEG: f32 = 3.0;
-const STEADY_STATE_NUM_SAMPLES: u32 = 10;
+const STEADY_STATE_NUM_SAMPLES: u32 = 100;
 
 // assume IMU is mounted upside down
 // yaw values range from -180.0 to +180.0
@@ -23,7 +23,7 @@ fn compute_yaw_error(measured_yaw: f32, desired_yaw: f32) -> f32 {
     }
 }
 
-pub fn turning_test(mut cx: turning_test::Context) {
+pub fn turning_test_task(mut cx: turning_test_task::Context) {
     let mut yaw: f32 = 0.0;
     cx.shared
         .imu_filter
@@ -76,5 +76,5 @@ pub fn turning_test(mut cx: turning_test::Context) {
         }
     }
     // run at 100 Hz
-    turning_test::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
+    turning_test_task::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
 }
