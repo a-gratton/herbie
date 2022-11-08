@@ -4,6 +4,7 @@
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
 mod app {
     use braincell::controller;
+    use braincell::controller::motor::{Direction, MotorDirections};
     use braincell::drivers::encoder::n20;
     use braincell::drivers::motor::mdd3a;
 
@@ -125,7 +126,14 @@ mod app {
             d_lim: 100.0,
             out_lim: 100.0,
         };
-        let motors = controller::motor::Motors::new(motor1, motor2, motor3, motor4, tune);
+        let motor_directions: MotorDirections = MotorDirections {
+            f_left: Direction::Forward,
+            r_left: Direction::Forward,
+            f_right: Direction::Backward,
+            r_right: Direction::Backward,
+        };
+        let motors =
+            controller::motor::Motors::new(motor1, motor2, motor3, motor4, tune, motor_directions);
 
         writeln!(tx, "system initialized\r").unwrap();
 
@@ -149,38 +157,35 @@ mod app {
         let start = monotonics::now().ticks() as f32 * 0.001;
         writeln!(cx.local.tx, "time: {start}, pwr 0.0, vel 0.0\r").unwrap();
 
-        let mut setpoints = controller::motor::MotorSetPoints {
-            f_left: 0.0,
-            r_left: 0.0,
-            f_right: 0.0,
-            r_right: 0.0,
-        };
-        cx.local.motors.set_speed_targets(&setpoints);
-
-        let mut vels = controller::motor::VelocityMeasurement {
-            f_left: 0.0,
-            r_left: 0.0,
-            f_right: 0.0,
-            r_right: 0.0,
-        };
-
         for setspeed in [2000.0, -2000.0, 1320.0, -1320.0, 0.0] {
             let start = monotonics::now().ticks() as f32 * 0.001;
-            setpoints.r_right = setspeed;
+            let setpoints = controller::motor::MotorSetPoints {
+                f_left: setspeed,
+                r_left: setspeed,
+                f_right: setspeed,
+                r_right: setspeed,
+            };
             cx.local.motors.set_speed_targets(&setpoints);
             while monotonics::now().ticks() as f32 * 0.001 - start < 3.0 {
                 let timeis: f32 = monotonics::now().ticks() as f32 * 0.001;
-                let new_count = cx.local.encoder4.get_speed(timeis);
-                vels.r_right = new_count;
-                let (_, _, _, pidout) = cx.local.motors.step(&vels);
+                let vels = controller::motor::VelocityMeasurement {
+                    f_left: cx.local.encoder1.get_speed(timeis),
+                    r_left: cx.local.encoder2.get_speed(timeis),
+                    f_right: cx.local.encoder3.get_speed(timeis),
+                    r_right: cx.local.encoder4.get_speed(timeis),
+                };
+                cx.local.motors.step(&vels);
+                let fl = vels.f_left;
+                let rl = vels.r_left;
+                let fr = vels.f_right;
+                let rr = vels.r_right;
                 writeln!(
                     cx.local.tx,
-                    "time {timeis} setspeed {setspeed} vel {new_count} pid {pidout}\r"
+                    "setspeed {setspeed} f_left {fl} r_left {rl} f_right {fr} r_right {rr}\r"
                 )
                 .unwrap();
             }
         }
-
         cx.local.motors.stop();
     }
 }

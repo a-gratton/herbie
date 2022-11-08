@@ -1,3 +1,4 @@
+use braincell::controller::motor::{Direction, MotorDirections};
 pub const TOF_FRONT_ADDRESS: u8 = 0x42;
 // pub const TOF_LEFT_ADDRESS: u8 = 0x69;
 
@@ -7,3 +8,10 @@ pub const IMU_CALIBRATION_NUM_SAMPLES: u32 = 10000;
 pub const DEFAULT_IMU_GYRO_BIAS_DPS: (f32, f32, f32) = (0.319, 0.034, 0.21);
 
 pub const SECONDS_PER_TICK: f32 = 0.001;
+
+pub const MOTOR_DIRECTIONS: MotorDirections = MotorDirections {
+    f_left: Direction::Forward,
+    r_left: Direction::Forward,
+    f_right: Direction::Backward,
+    r_right: Direction::Backward,
+};
