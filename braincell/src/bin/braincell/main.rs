@@ -174,41 +174,11 @@ mod app {
             }
         }
 
-        // IMU calibration
-        let imu_gyro_bias = {
-            if sys_config::CALIBRATE_IMU {
-                writeln!(tx, "calibrating imu...").unwrap();
-                let num_samples = sys_config::IMU_CALIBRATION_NUM_SAMPLES;
-                let mut gyro_sum: (f32, f32, f32) = (0.0, 0.0, 0.0);
-                for _ in 1..=num_samples {
-                    while !imu.data_ready().unwrap_or(false) {}
-                    if let Ok(_) = imu.read_data() {
-                        gyro_sum.0 += imu.get_gyro_x();
-                        gyro_sum.1 += imu.get_gyro_y();
-                        gyro_sum.2 += imu.get_gyro_z();
-                    }
-                }
-                (
-                    gyro_sum.0 / (num_samples as f32),
-                    gyro_sum.1 / (num_samples as f32),
-                    gyro_sum.2 / (num_samples as f32),
-                )
-            } else {
-                sys_config::DEFAULT_IMU_GYRO_BIAS_DPS
-            }
-        };
-        writeln!(
-            tx,
-            "imu gyro bias (deg/s): [{}, {}, {}]",
-            imu_gyro_bias.0, imu_gyro_bias.1, imu_gyro_bias.2
-        )
-        .unwrap();
-
         let tof_front_filter = sma::SmaFilter::<u16, 10>::new();
         let imu_filter =
             filter::ImuFilter::<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
                 mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI),
-                imu_gyro_bias,
+                sys_config::DEFAULT_IMU_GYRO_BIAS_DPS,
             );
 
         //set up PWM
@@ -282,7 +252,7 @@ mod app {
         let button = gpioc.pc13.into_input();
 
         // set up turning pid
-        let turning_pid = pid::Pid::new(0.0, 0.0, 0.0, 1320.0, 1320.0, 1320.0, 1320.0, 0.0);
+        let turning_pid = pid::Pid::new(5.2, 0.01, 2.8, 2640.0, 2640.0, 2640.0, 2640.0, 0.0);
 
         // set up linear pid
         let yaw_compensation_pid =
@@ -298,6 +268,7 @@ mod app {
         let start_ticks = monotonics::now().ticks();
         filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
         speed_control::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+        turning_test_task::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
 
         (
             Shared {
@@ -349,7 +320,7 @@ mod app {
 
     use crate::turning_test::turning_test_task;
     extern "Rust" {
-        #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button, turning_pid], shared=[imu_filter, motor_setpoints])]
+        #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button, turning_pid], shared=[tx, imu_filter, motor_setpoints])]
         fn turning_test_task(mut cx: turning_test_task::Context);
     }
 
