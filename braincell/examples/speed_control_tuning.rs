@@ -166,7 +166,7 @@ mod app {
                 r_right: setspeed,
             };
             cx.local.motors.set_speed_targets(&setpoints);
-            while monotonics::now().ticks() as f32 * 0.001 - start < 3.0 {
+            while monotonics::now().ticks() as f32 * 0.001 - start < 1.0 {
                 let timeis: f32 = monotonics::now().ticks() as f32 * 0.001;
                 let vels = controller::motor::VelocityMeasurement {
                     f_left: cx.local.encoder1.get_speed(timeis),

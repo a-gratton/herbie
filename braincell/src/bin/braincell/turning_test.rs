@@ -5,7 +5,7 @@ use libm::fabsf;
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
 
-const YAW_TOLERANCE_DEG: f32 = 2.0;
+const YAW_TOLERANCE_DEG: f32 = 0.0;
 const STEADY_STATE_NUM_SAMPLES: u32 = 30000000;
 
 // assume IMU is mounted upside down
@@ -75,9 +75,6 @@ pub fn turning_test_task(mut cx: turning_test_task::Context) {
             }
         }
     } else if cx.local.button.is_low() {
-        cx.shared
-            .tx
-            .lock(|tx| writeln!(tx, "button pressed").unwrap());
         while cx.local.button.is_low() {
             asm::nop();
         }
@@ -86,19 +83,16 @@ pub fn turning_test_task(mut cx: turning_test_task::Context) {
         if *cx.local.desired_yaw > 180.0 {
             *cx.local.desired_yaw -= 360.0;
         }
-        cx.shared
-            .tx
-            .lock(|tx| writeln!(tx, "button released").unwrap());
     }
-    cx.shared.tx.lock(|tx| {
-        writeln!(
-            tx,
-            "measured_yaw {yaw} desired_yaw {} base_speed {}",
-            *cx.local.desired_yaw,
-            base_speed / 10.0
-        )
-        .unwrap()
-    });
+    // cx.shared.tx.lock(|tx| {
+    //     writeln!(
+    //         tx,
+    //         "measured_yaw {yaw} desired_yaw {} base_speed {}",
+    //         *cx.local.desired_yaw,
+    //         base_speed / 10.0
+    //     )
+    //     .unwrap()
+    // });
     // run at 100 Hz
     turning_test_task::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
 }

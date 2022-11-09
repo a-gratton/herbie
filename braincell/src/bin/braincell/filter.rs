@@ -84,10 +84,11 @@ impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
 }
 
 pub fn filter_data(mut cx: filter_data::Context) {
-    let task_start_ticks: u64 = monotonics::now().ticks();
-    let deltat: f32 =
-        (task_start_ticks - *cx.local.filter_data_prev_ticks) as f32 * sys_config::SECONDS_PER_TICK;
-    *cx.local.filter_data_prev_ticks = task_start_ticks;
+    // let task_start_ticks: u64 = monotonics::now().ticks();
+    // let deltat: f32 =
+    //     (task_start_ticks - *cx.local.filter_data_prev_ticks) as f32 * sys_config::SECONDS_PER_TICK;
+    // *cx.local.filter_data_prev_ticks = task_start_ticks;
+    let deltat = 0.0;
 
     // read ToF
     if cx

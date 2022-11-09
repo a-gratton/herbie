@@ -7,7 +7,7 @@ mod motors;
 mod turning_test;
 // mod linear_test;
 
-#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
+#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2, SPI3, SPI4, EXTI1])]
 mod app {
     use crate::config::sys_config;
     use crate::config::tuning;
@@ -23,7 +23,7 @@ mod app {
     use panic_write::PanicHandler;
     use pid;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Input, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
+        gpio::{Alternate, Input, Output, Pin, PushPull, PA5, PB10, PB3, PB4, PB5, PC12},
         i2c::{I2c, Mode as i2cMode},
         pac::{I2C2, SPI1, TIM1, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
         prelude::*,
@@ -36,7 +36,7 @@ mod app {
 
     #[shared]
     struct Shared {
-        tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
+        // tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         imu_filter: filter::ImuFilter<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
         tof_front_filter: sma::SmaFilter<u16, 10>,
         motor_setpoints: controller::motor::MotorSetPoints,
@@ -72,6 +72,7 @@ mod app {
         turning_pid: pid::Pid<f32>,
         yaw_compensation_pid: pid::Pid<f32>,
         start_ticks: u64,
+        led: PA5<Output<PushPull>>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -135,8 +136,9 @@ mod app {
             match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_FRONT_ADDRESS) {
                 Ok(val) => val,
                 Err(_) => {
-                    writeln!(tx, "tof_front initialization failed\r").unwrap();
-                    panic!("tof_front initialization failed");
+                    // writeln!(tx, "tof_front initialization failed\r").unwrap();
+                    // panic!("tof_front initialization failed");
+                    panic!();
                 }
             };
         if let Err(_) = tof_front.start_ranging(
@@ -145,8 +147,8 @@ mod app {
             Some(vl53l1x::TimingBudget::Tb15ms),
             Some(20),
         ) {
-            writeln!(tx, "error starting tof_front ranging").unwrap();
-            panic!("tof_front start_ranging failed");
+            // writeln!(tx, "error starting tof_front ranging").unwrap();
+            // panic!("tof_front start_ranging failed");
         }
 
         // set up IMU sensor
@@ -158,19 +160,19 @@ mod app {
             icm20948::GyroDLPFSel::Disable,
             icm20948::MagMode::Continuous100Hz,
         ) {
-            Ok(_) => writeln!(tx, "imu initialized").unwrap(),
+            Ok(_) => {} //writeln!(tx, "imu initialized").unwrap(),
             Err(e) => {
-                match e {
-                    icm20948::ErrorCode::ParamError => writeln!(tx, "param error").unwrap(),
-                    icm20948::ErrorCode::SpiError => writeln!(tx, "SPI error").unwrap(),
-                    icm20948::ErrorCode::WrongID => writeln!(tx, "wrong ID").unwrap(),
-                    icm20948::ErrorCode::MagError => writeln!(tx, "magnetometer error").unwrap(),
-                    icm20948::ErrorCode::MagWrongID => {
-                        writeln!(tx, "magnetometer wrong ID").unwrap()
-                    }
-                    icm20948::ErrorCode::CSError => writeln!(tx, "CS error").unwrap(),
-                }
-                panic!("imu initialization failed");
+                // match e {
+                //     icm20948::ErrorCode::ParamError => writeln!(tx, "param error").unwrap(),
+                //     icm20948::ErrorCode::SpiError => writeln!(tx, "SPI error").unwrap(),
+                //     icm20948::ErrorCode::WrongID => writeln!(tx, "wrong ID").unwrap(),
+                //     icm20948::ErrorCode::MagError => writeln!(tx, "magnetometer error").unwrap(),
+                //     icm20948::ErrorCode::MagWrongID => {
+                //         writeln!(tx, "magnetometer wrong ID").unwrap()
+                //     }
+                //     icm20948::ErrorCode::CSError => writeln!(tx, "CS error").unwrap(),
+                // }
+                // panic!("imu initialization failed");
             }
         }
 
@@ -252,13 +254,13 @@ mod app {
         let button = gpioc.pc13.into_input();
 
         // set up turning pid
-        let turning_pid = pid::Pid::new(5.2, 0.01, 2.8, 2640.0, 2640.0, 2640.0, 2640.0, 0.0);
+        let turning_pid = pid::Pid::new(2.5, 0.0, 0.0, 2640.0, 2640.0, 2640.0, 2640.0, 0.0);
 
         // set up linear pid
         let yaw_compensation_pid =
             pid::Pid::new(0.0, 0.0, 0.0, 1320.0, 1320.0, 1320.0, 1320.0, 0.0);
 
-        writeln!(tx, "system initialized\r").unwrap();
+        // writeln!(tx, "system initialized\r").unwrap();
 
         let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
         let desired_yaw: f32 = 0.0;
@@ -266,13 +268,16 @@ mod app {
         let currently_turning: bool = false;
         let currently_running: bool = false;
         let start_ticks = monotonics::now().ticks();
+        let led = gpioa.pa5.into_push_pull_output();
         filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
         speed_control::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
         turning_test_task::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+        // linear_test_task::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+        blinky::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
 
         (
             Shared {
-                tx,
+                // tx,
                 tof_front_filter,
                 imu_filter,
                 motor_setpoints,
@@ -295,6 +300,7 @@ mod app {
                 turning_pid,
                 yaw_compensation_pid,
                 start_ticks,
+                led,
             },
             init::Monotonics(mono),
         )
@@ -302,13 +308,13 @@ mod app {
 
     use crate::filter::filter_data;
     extern "Rust" {
-        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[tx, imu_filter, tof_front_filter])]
+        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[imu_filter, tof_front_filter], priority=3)]
         fn filter_data(mut cx: filter_data::Context);
     }
 
     use crate::motors::speed_control;
     extern "Rust" {
-        #[task(local=[motors, encoder_f_left, encoder_r_left, encoder_f_right, encoder_r_right], shared=[tx, motor_setpoints])]
+        #[task(local=[motors, encoder_f_left, encoder_r_left, encoder_f_right, encoder_r_right], shared=[motor_setpoints], priority=4)]
         fn speed_control(context: speed_control::Context);
     }
 
@@ -320,8 +326,14 @@ mod app {
 
     use crate::turning_test::turning_test_task;
     extern "Rust" {
-        #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button, turning_pid], shared=[tx, imu_filter, motor_setpoints])]
+        #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button, turning_pid], shared=[imu_filter, motor_setpoints], priority=2)]
         fn turning_test_task(mut cx: turning_test_task::Context);
+    }
+
+    #[task(local=[led], shared=[], priority=1)]
+    fn blinky(cx: blinky::Context) {
+        cx.local.led.toggle();
+        blinky::spawn_after(Duration::<u64, 1, 1000>::millis(1000)).unwrap();
     }
 
     #[idle]
