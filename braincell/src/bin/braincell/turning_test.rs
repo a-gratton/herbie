@@ -5,8 +5,7 @@ use libm::fabsf;
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
 
-const YAW_TOLERANCE_DEG: f32 = 0.0;
-const STEADY_STATE_NUM_SAMPLES: u32 = 30000000;
+const YAW_TOLERANCE_DEG: f32 = 1.0;
 
 // assume IMU is mounted upside down
 // yaw values range from -180.0 to +180.0
@@ -49,17 +48,13 @@ pub fn turning_test_task(mut cx: turning_test_task::Context) {
             // check if yaw set point is reached
             let yaw_error: f32 = compute_yaw_error(yaw, *cx.local.desired_yaw);
             if fabsf(yaw_error) < YAW_TOLERANCE_DEG {
-                // check if steady state is reached
-                *cx.local.num_samples_within_yaw_tolerance += 1;
-                if *cx.local.num_samples_within_yaw_tolerance == STEADY_STATE_NUM_SAMPLES {
-                    *cx.local.currently_turning = false;
-                    cx.shared.motor_setpoints.lock(|motor_setpoints| {
-                        motor_setpoints.f_right = 0.0;
-                        motor_setpoints.r_right = 0.0;
-                        motor_setpoints.f_left = 0.0;
-                        motor_setpoints.r_left = 0.0;
-                    });
-                }
+                *cx.local.currently_turning = false;
+                cx.shared.motor_setpoints.lock(|motor_setpoints| {
+                    motor_setpoints.f_right = 0.0;
+                    motor_setpoints.r_right = 0.0;
+                    motor_setpoints.f_left = 0.0;
+                    motor_setpoints.r_left = 0.0;
+                });
             } else {
                 *cx.local.num_samples_within_yaw_tolerance = 0;
                 // compute right and left side speed set points
@@ -84,15 +79,15 @@ pub fn turning_test_task(mut cx: turning_test_task::Context) {
             *cx.local.desired_yaw -= 360.0;
         }
     }
-    // cx.shared.tx.lock(|tx| {
-    //     writeln!(
-    //         tx,
-    //         "measured_yaw {yaw} desired_yaw {} base_speed {}",
-    //         *cx.local.desired_yaw,
-    //         base_speed / 10.0
-    //     )
-    //     .unwrap()
-    // });
+    cx.shared.tx.lock(|tx| {
+        writeln!(
+            tx,
+            "measured_yaw {yaw} desired_yaw {} base_speed {}",
+            *cx.local.desired_yaw,
+            base_speed / 10.0
+        )
+        .unwrap()
+    });
     // run at 100 Hz
     turning_test_task::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
 }

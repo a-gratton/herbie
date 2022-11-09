@@ -36,7 +36,7 @@ mod app {
 
     #[shared]
     struct Shared {
-        // tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
+        tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         imu_filter: filter::ImuFilter<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
         tof_front_filter: sma::SmaFilter<u16, 10>,
         motor_setpoints: controller::motor::MotorSetPoints,
@@ -136,9 +136,8 @@ mod app {
             match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_FRONT_ADDRESS) {
                 Ok(val) => val,
                 Err(_) => {
-                    // writeln!(tx, "tof_front initialization failed\r").unwrap();
-                    // panic!("tof_front initialization failed");
-                    panic!();
+                    writeln!(tx, "tof_front initialization failed\r").unwrap();
+                    panic!("tof_front initialization failed");
                 }
             };
         if let Err(_) = tof_front.start_ranging(
@@ -147,8 +146,8 @@ mod app {
             Some(vl53l1x::TimingBudget::Tb15ms),
             Some(20),
         ) {
-            // writeln!(tx, "error starting tof_front ranging").unwrap();
-            // panic!("tof_front start_ranging failed");
+            writeln!(tx, "error starting tof_front ranging").unwrap();
+            panic!("tof_front start_ranging failed");
         }
 
         // set up IMU sensor
@@ -160,19 +159,19 @@ mod app {
             icm20948::GyroDLPFSel::Disable,
             icm20948::MagMode::Continuous100Hz,
         ) {
-            Ok(_) => {} //writeln!(tx, "imu initialized").unwrap(),
+            Ok(_) => writeln!(tx, "imu initialized").unwrap(),
             Err(e) => {
-                // match e {
-                //     icm20948::ErrorCode::ParamError => writeln!(tx, "param error").unwrap(),
-                //     icm20948::ErrorCode::SpiError => writeln!(tx, "SPI error").unwrap(),
-                //     icm20948::ErrorCode::WrongID => writeln!(tx, "wrong ID").unwrap(),
-                //     icm20948::ErrorCode::MagError => writeln!(tx, "magnetometer error").unwrap(),
-                //     icm20948::ErrorCode::MagWrongID => {
-                //         writeln!(tx, "magnetometer wrong ID").unwrap()
-                //     }
-                //     icm20948::ErrorCode::CSError => writeln!(tx, "CS error").unwrap(),
-                // }
-                // panic!("imu initialization failed");
+                match e {
+                    icm20948::ErrorCode::ParamError => writeln!(tx, "param error").unwrap(),
+                    icm20948::ErrorCode::SpiError => writeln!(tx, "SPI error").unwrap(),
+                    icm20948::ErrorCode::WrongID => writeln!(tx, "wrong ID").unwrap(),
+                    icm20948::ErrorCode::MagError => writeln!(tx, "magnetometer error").unwrap(),
+                    icm20948::ErrorCode::MagWrongID => {
+                        writeln!(tx, "magnetometer wrong ID").unwrap()
+                    }
+                    icm20948::ErrorCode::CSError => writeln!(tx, "CS error").unwrap(),
+                }
+                panic!("imu initialization failed");
             }
         }
 
@@ -277,7 +276,7 @@ mod app {
 
         (
             Shared {
-                // tx,
+                tx,
                 tof_front_filter,
                 imu_filter,
                 motor_setpoints,
@@ -326,7 +325,7 @@ mod app {
 
     use crate::turning_test::turning_test_task;
     extern "Rust" {
-        #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button, turning_pid], shared=[imu_filter, motor_setpoints], priority=2)]
+        #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button, turning_pid], shared=[tx, imu_filter, motor_setpoints], priority=2)]
         fn turning_test_task(mut cx: turning_test_task::Context);
     }
 
