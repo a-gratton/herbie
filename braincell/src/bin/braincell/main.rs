@@ -37,7 +37,6 @@ mod app {
         imu_filter: filter::ImuFilter<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
         tof_front_filter: sma::SmaFilter<u16, 10>,
         motor_setpoints: controller::motor::MotorSetPoints,
-        motor_velocities: controller::motor::VelocityMeasurement,
     }
 
     #[local]
@@ -55,10 +54,13 @@ mod app {
             mdd3a::MDD3A<PwmChannel<TIM8, 0>, PwmChannel<TIM8, 1>>,
             mdd3a::MDD3A<PwmChannel<TIM8, 2>, PwmChannel<TIM8, 3>>,
         >,
-        encoder1: n20::N20<Qei<TIM2, (Pin<'A', 15, Alternate<1>>, Pin<'B', 9, Alternate<1>>)>>,
-        encoder2: n20::N20<Qei<TIM3, (Pin<'A', 6, Alternate<2>>, Pin<'A', 7, Alternate<2>>)>>,
-        encoder3: n20::N20<Qei<TIM4, (Pin<'B', 6, Alternate<2>>, Pin<'B', 7, Alternate<2>>)>>,
-        encoder4: n20::N20<Qei<TIM5, (Pin<'A', 0, Alternate<2>>, Pin<'A', 1, Alternate<2>>)>>,
+        encoder_f_left:
+            n20::N20<Qei<TIM2, (Pin<'A', 15, Alternate<1>>, Pin<'B', 9, Alternate<1>>)>>,
+        encoder_r_left: n20::N20<Qei<TIM3, (Pin<'A', 6, Alternate<2>>, Pin<'A', 7, Alternate<2>>)>>,
+        encoder_f_right:
+            n20::N20<Qei<TIM4, (Pin<'B', 6, Alternate<2>>, Pin<'B', 7, Alternate<2>>)>>,
+        encoder_r_right:
+            n20::N20<Qei<TIM5, (Pin<'A', 0, Alternate<2>>, Pin<'A', 1, Alternate<2>>)>>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -239,9 +241,9 @@ mod app {
             motor_f_right,
             motor_r_right,
             tune,
+            sys_config::MOTOR_DIRECTIONS,
         );
         let motor_setpoints = controller::motor::MotorSetPoints::default();
-        let motor_velocities = controller::motor::VelocityMeasurement::default();
 
         //setup encoders
         let encoder1_qei = Qei::new(
@@ -260,10 +262,10 @@ mod app {
             ctx.device.TIM5,
             (gpioa.pa0.into_alternate(), gpioa.pa1.into_alternate()),
         );
-        let mut encoder1 = n20::N20::new(encoder1_qei);
-        let mut encoder2 = n20::N20::new(encoder2_qei);
-        let mut encoder3 = n20::N20::new(encoder3_qei);
-        let mut encoder4 = n20::N20::new(encoder4_qei);
+        let encoder_f_left = n20::N20::new(encoder1_qei);
+        let encoder_r_left = n20::N20::new(encoder2_qei);
+        let encoder_f_right = n20::N20::new(encoder3_qei);
+        let encoder_r_right = n20::N20::new(encoder4_qei);
 
         writeln!(tx, "system initialized\r").unwrap();
 
@@ -277,7 +279,6 @@ mod app {
                 tof_front_filter,
                 imu_filter,
                 motor_setpoints,
-                motor_velocities,
             },
             Local {
                 i2c,
@@ -285,10 +286,10 @@ mod app {
                 imu,
                 filter_data_prev_ticks,
                 motors,
-                encoder1,
-                encoder2,
-                encoder3,
-                encoder4,
+                encoder_f_left,
+                encoder_r_left,
+                encoder_f_right,
+                encoder_r_right,
             },
             init::Monotonics(mono),
         )
@@ -302,7 +303,7 @@ mod app {
 
     use crate::motors::speed_control;
     extern "Rust" {
-        #[task(local=[motors], shared=[tx, motor_setpoints, motor_velocities])]
+        #[task(local=[motors, encoder_f_left, encoder_r_left, encoder_f_right, encoder_r_right], shared=[tx, motor_setpoints])]
         fn speed_control(context: speed_control::Context);
     }
 

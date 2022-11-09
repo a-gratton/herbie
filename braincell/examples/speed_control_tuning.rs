@@ -3,12 +3,10 @@
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
 mod app {
+    use braincell::controller;
+    use braincell::controller::motor::{Direction, MotorDirections};
     use braincell::drivers::encoder::n20;
     use braincell::drivers::motor::mdd3a;
-    use braincell::drivers::motor::mdd3a::SetPower;
-    use braincell::drivers::motor::mdd3a::Start;
-
-    use cortex_m::asm;
 
     use core::fmt::Write;
     use panic_write::PanicHandler;
@@ -34,10 +32,12 @@ mod app {
         encoder2: n20::N20<Qei<TIM3, (Pin<'A', 6, Alternate<2>>, Pin<'A', 7, Alternate<2>>)>>,
         encoder3: n20::N20<Qei<TIM4, (Pin<'B', 6, Alternate<2>>, Pin<'B', 7, Alternate<2>>)>>,
         encoder4: n20::N20<Qei<TIM5, (Pin<'A', 0, Alternate<2>>, Pin<'A', 1, Alternate<2>>)>>,
-        motor1: mdd3a::MDD3A<PwmChannel<TIM1, 0>, PwmChannel<TIM1, 1>>,
-        motor2: mdd3a::MDD3A<PwmChannel<TIM1, 2>, PwmChannel<TIM1, 3>>,
-        motor3: mdd3a::MDD3A<PwmChannel<TIM8, 0>, PwmChannel<TIM8, 1>>,
-        motor4: mdd3a::MDD3A<PwmChannel<TIM8, 2>, PwmChannel<TIM8, 3>>,
+        motors: controller::motor::Motors<
+            mdd3a::MDD3A<PwmChannel<TIM1, 0>, PwmChannel<TIM1, 1>>,
+            mdd3a::MDD3A<PwmChannel<TIM1, 2>, PwmChannel<TIM1, 3>>,
+            mdd3a::MDD3A<PwmChannel<TIM8, 0>, PwmChannel<TIM8, 1>>,
+            mdd3a::MDD3A<PwmChannel<TIM8, 2>, PwmChannel<TIM8, 3>>,
+        >,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -112,16 +112,28 @@ mod app {
         let pwm3 = (pwms2.0, pwms2.1);
         let pwm4 = (pwms2.2, pwms2.3);
 
-        let mut motor1 = mdd3a::MDD3A::new(pwm1);
-        let mut motor2 = mdd3a::MDD3A::new(pwm2);
-        let mut motor3 = mdd3a::MDD3A::new(pwm3);
-        let mut motor4 = mdd3a::MDD3A::new(pwm4);
+        let motor1 = mdd3a::MDD3A::new(pwm1);
+        let motor2 = mdd3a::MDD3A::new(pwm2);
+        let motor3 = mdd3a::MDD3A::new(pwm3);
+        let motor4 = mdd3a::MDD3A::new(pwm4);
 
-        //default pwm channels are not enabled
-        motor1.start();
-        motor2.start();
-        motor3.start();
-        motor4.start();
+        let tune: controller::pid_params::TuningParams = controller::pid_params::TuningParams {
+            kp: 0.000015,
+            ki: 0.003,
+            kd: 0.00012,
+            p_lim: 100.0,
+            i_lim: 100.0,
+            d_lim: 100.0,
+            out_lim: 100.0,
+        };
+        let motor_directions: MotorDirections = MotorDirections {
+            f_left: Direction::Forward,
+            r_left: Direction::Forward,
+            f_right: Direction::Backward,
+            r_right: Direction::Backward,
+        };
+        let motors =
+            controller::motor::Motors::new(motor1, motor2, motor3, motor4, tune, motor_directions);
 
         writeln!(tx, "system initialized\r").unwrap();
 
@@ -134,44 +146,46 @@ mod app {
                 encoder2,
                 encoder3,
                 encoder4,
-                motor1,
-                motor2,
-                motor3,
-                motor4,
+                motors,
             },
             init::Monotonics(mono),
         )
     }
 
-    #[task(local=[tx, encoder1, encoder2, encoder3, encoder4, motor1, motor2, motor3, motor4], shared=[])]
+    #[task(local=[tx, encoder1, encoder2, encoder3, encoder4, motors], shared=[])]
     fn read_speed(cx: read_speed::Context) {
-        let start: u64 = monotonics::now().ticks();
+        let start = monotonics::now().ticks() as f32 * 0.001;
+        writeln!(cx.local.tx, "time: {start}, pwr 0.0, vel 0.0\r").unwrap();
 
-        //spin 2 sec
-        cx.local.motor1.set_power(100.0);
-        cx.local.motor2.set_power(100.0);
-        cx.local.motor3.set_power(100.0);
-        cx.local.motor4.set_power(100.0);
-
-        while monotonics::now().ticks() - start < 2000 {
-            let timeis: f32 = monotonics::now().ticks() as f32 * 0.001;
-            let new_count1 = cx.local.encoder1.get_speed(timeis);
-            writeln!(cx.local.tx, "enc1: {new_count1}\r").unwrap();
-            let new_count2 = cx.local.encoder2.get_speed(timeis);
-            writeln!(cx.local.tx, "enc2: {new_count2}\r").unwrap();
-            let new_count3 = cx.local.encoder3.get_speed(timeis);
-            writeln!(cx.local.tx, "enc3: {new_count3}\r").unwrap();
-            let new_count4 = cx.local.encoder4.get_speed(timeis);
-            writeln!(cx.local.tx, "enc4: {new_count4}\r").unwrap();
-            asm::delay(1000000);
+        for setspeed in [2000.0, -2000.0, 1320.0, -1320.0, 0.0] {
+            let start = monotonics::now().ticks() as f32 * 0.001;
+            let setpoints = controller::motor::MotorSetPoints {
+                f_left: setspeed,
+                r_left: setspeed,
+                f_right: setspeed,
+                r_right: setspeed,
+            };
+            cx.local.motors.set_speed_targets(&setpoints);
+            while monotonics::now().ticks() as f32 * 0.001 - start < 3.0 {
+                let timeis: f32 = monotonics::now().ticks() as f32 * 0.001;
+                let vels = controller::motor::VelocityMeasurement {
+                    f_left: cx.local.encoder1.get_speed(timeis),
+                    r_left: cx.local.encoder2.get_speed(timeis),
+                    f_right: cx.local.encoder3.get_speed(timeis),
+                    r_right: cx.local.encoder4.get_speed(timeis),
+                };
+                cx.local.motors.step(&vels);
+                let fl = vels.f_left;
+                let rl = vels.r_left;
+                let fr = vels.f_right;
+                let rr = vels.r_right;
+                writeln!(
+                    cx.local.tx,
+                    "setspeed {setspeed} f_left {fl} r_left {rl} f_right {fr} r_right {rr}\r"
+                )
+                .unwrap();
+            }
         }
-
-        cx.local.motor2.set_power(0.0);
-        cx.local.motor3.set_power(0.0);
-        cx.local.motor4.set_power(0.0);
-        cx.local.motor1.set_power(0.0);
-
-        // run at 100 Hz
-        //read_speed::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
+        cx.local.motors.stop();
     }
 }
