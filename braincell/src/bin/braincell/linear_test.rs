@@ -7,6 +7,8 @@ use libm::fabsf;
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
 
+const MAX_BASE_SPEED_DPS: f32 = 1300.0;
+
 // assume IMU is mounted upside down
 // yaw values range from -180.0 to +180.0
 // return value sign:
@@ -38,7 +40,7 @@ pub fn linear_test_task(mut cx: linear_test_task::Context) {
             *cx.local.currently_running = false;
         } else if (monotonics::now().ticks() - *cx.local.start_ticks) as f32
             * sys_config::SECONDS_PER_TICK
-            > 10.0
+            > 2.0
         {
             // set motor set points
             cx.shared.motor_setpoints.lock(|motor_setpoints| {
@@ -51,7 +53,7 @@ pub fn linear_test_task(mut cx: linear_test_task::Context) {
         } else {
             // compute right and left side speed set points
             let yaw_error: f32 = compute_yaw_error(yaw, *cx.local.desired_yaw);
-            let base_speed: f32 = 1300.0;
+            let base_speed: f32 = MAX_BASE_SPEED_DPS;
             let yaw_alpha: f32 = cx
                 .local
                 .yaw_compensation_pid

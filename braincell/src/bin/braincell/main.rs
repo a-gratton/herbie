@@ -5,7 +5,8 @@ mod config;
 mod filter;
 mod motors;
 // mod turning_test;
-mod linear_test;
+// mod linear_test;
+mod linear_speed_profile_test;
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2, SPI3, SPI4, EXTI1])]
 mod app {
@@ -38,7 +39,7 @@ mod app {
     struct Shared {
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         imu_filter: filter::ImuFilter<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
-        tof_front_filter: sma::SmaFilter<u16, 10>,
+        tof_front_filter: sma::SmaFilter<i32, 5>,
         motor_setpoints: controller::motor::MotorSetPoints,
     }
 
@@ -73,6 +74,9 @@ mod app {
         yaw_compensation_pid: pid::Pid<f32>,
         start_ticks: u64,
         led: PA5<Output<PushPull>>,
+        base_speed: f32,
+        distance_pid: pid::Pid<f32>,
+        num_samples_within_distance_tolerance: usize,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -175,7 +179,7 @@ mod app {
             }
         }
 
-        let tof_front_filter = sma::SmaFilter::<u16, 10>::new();
+        let tof_front_filter = sma::SmaFilter::<i32, 5>::new();
         let imu_filter =
             filter::ImuFilter::<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
                 mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI),
@@ -258,6 +262,9 @@ mod app {
         // set up linear pid
         let yaw_compensation_pid = pid::Pid::new(0.05, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0);
 
+        // set up distance pid
+        let distance_pid = pid::Pid::new(1.8, 0.0, 0.7, 1800.0, 1800.0, 1800.0, 1800.0, 0.0);
+
         writeln!(tx, "system initialized\r").unwrap();
 
         let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
@@ -267,10 +274,13 @@ mod app {
         let currently_running: bool = false;
         let start_ticks = monotonics::now().ticks();
         let led = gpioa.pa5.into_push_pull_output();
+        let base_speed: f32 = 0.0;
+        let num_samples_within_distance_tolerance: usize = 0;
         filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
         speed_control::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
         // turning_test_task::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
-        linear_test_task::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+        // linear_test_task::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+        linear_speed_profile_test_task::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
         blinky::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
 
         (
@@ -299,6 +309,9 @@ mod app {
                 yaw_compensation_pid,
                 start_ticks,
                 led,
+                base_speed,
+                distance_pid,
+                num_samples_within_distance_tolerance,
             },
             init::Monotonics(mono),
         )
@@ -306,7 +319,7 @@ mod app {
 
     use crate::filter::filter_data;
     extern "Rust" {
-        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[imu_filter, tof_front_filter], priority=3)]
+        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[imu_filter, tof_front_filter, tx], priority=3)]
         fn filter_data(mut cx: filter_data::Context);
     }
 
@@ -316,17 +329,23 @@ mod app {
         fn speed_control(context: speed_control::Context);
     }
 
-    use crate::linear_test::linear_test_task;
-    extern "Rust" {
-        #[task(local=[desired_yaw, currently_running, button, yaw_compensation_pid, start_ticks], shared=[tx, imu_filter, motor_setpoints])]
-        fn linear_test_task(mut cx: linear_test_task::Context);
-    }
+    // use crate::linear_test::linear_test_task;
+    // extern "Rust" {
+    //     #[task(local=[desired_yaw, currently_running, button, yaw_compensation_pid, start_ticks], shared=[tx, imu_filter, motor_setpoints])]
+    //     fn linear_test_task(mut cx: linear_test_task::Context);
+    // }
 
     // use crate::turning_test::turning_test_task;
     // extern "Rust" {
     //     #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button, turning_pid], shared=[tx, imu_filter, motor_setpoints], priority=2)]
     //     fn turning_test_task(mut cx: turning_test_task::Context);
     // }
+
+    use crate::linear_speed_profile_test::linear_speed_profile_test_task;
+    extern "Rust" {
+        #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, currently_running, button, yaw_compensation_pid, base_speed, distance_pid, num_samples_within_distance_tolerance], shared=[tx, tof_front_filter, imu_filter, motor_setpoints], priority=2)]
+        fn linear_speed_profile_test_task(mut cx: linear_speed_profile_test_task::Context);
+    }
 
     #[task(local=[led], shared=[], priority=1)]
     fn blinky(cx: blinky::Context) {
