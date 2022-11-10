@@ -1,11 +1,15 @@
 use crate::app::turning_test_task;
 use core::fmt::Write;
 use cortex_m::asm;
-use libm::fabsf;
+use libm::{fabsf, fminf};
+use pid;
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
 
-const YAW_TOLERANCE_DEG: f32 = 1.0;
+const YAW_TOLERANCE_DEG: f32 = 2.0;
+const MAX_SPEED_DEG_PER_S: f32 = 2640.0;
+const TURNING_SPEED_SLOPE: f32 = 5.2; //could go a little less
+
 
 // assume IMU is mounted upside down
 // yaw values range from -180.0 to +180.0
@@ -23,13 +27,23 @@ fn compute_yaw_error(measured_yaw: f32, desired_yaw: f32) -> f32 {
     }
 }
 
+// trapezoid speed profile
+fn turning_speed_profile(yaw_error: f32) -> f32 {
+    let mut speed: f32 = fminf(MAX_SPEED_DEG_PER_S, TURNING_SPEED_SLOPE * fabsf(yaw_error));
+    if yaw_error < 0.0 {
+        speed *= -1.0;
+    }
+    return speed;
+}
+
 pub fn turning_test_task(mut cx: turning_test_task::Context) {
     let mut yaw: f32 = 0.0;
     cx.shared
         .imu_filter
         .lock(|imu_filter| (_, _, yaw) = imu_filter.filtered().unwrap_or((0.0, 0.0, 0.0))); // IMU is mounted sideways -> swap pitch and roll
 
-    let mut base_speed = 0.0;
+    let mut base_speed: f32 = 0.0;
+    let mut yaw_error: f32 = 0.0;
 
     if *cx.local.currently_turning {
         // check for button press
@@ -46,7 +60,7 @@ pub fn turning_test_task(mut cx: turning_test_task::Context) {
             });
         } else {
             // check if yaw set point is reached
-            let yaw_error: f32 = compute_yaw_error(yaw, *cx.local.desired_yaw);
+            yaw_error = compute_yaw_error(yaw, *cx.local.desired_yaw);
             if fabsf(yaw_error) < YAW_TOLERANCE_DEG {
                 *cx.local.currently_turning = false;
                 cx.shared.motor_setpoints.lock(|motor_setpoints| {
@@ -58,8 +72,9 @@ pub fn turning_test_task(mut cx: turning_test_task::Context) {
             } else {
                 *cx.local.num_samples_within_yaw_tolerance = 0;
                 // compute right and left side speed set points
-                base_speed = cx.local.turning_pid.next_control_output(yaw_error).output;
-                let (right_side_speed, left_side_speed): (f32, f32) = (-base_speed, base_speed);
+                // base_speed = cx.local.turning_pid.next_control_output(yaw_error).output;
+                base_speed = turning_speed_profile(yaw_error);
+                let (right_side_speed, left_side_speed): (f32, f32) = (base_speed, -base_speed);
                 // set motor set points
                 cx.shared.motor_setpoints.lock(|motor_setpoints| {
                     motor_setpoints.f_right = right_side_speed;
@@ -74,15 +89,13 @@ pub fn turning_test_task(mut cx: turning_test_task::Context) {
             asm::nop();
         }
         *cx.local.currently_turning = true;
-        *cx.local.desired_yaw = yaw + 90.0;
-        if *cx.local.desired_yaw > 180.0 {
-            *cx.local.desired_yaw -= 360.0;
-        }
+        cx.shared.imu_filter.lock(|imu_filter| imu_filter.reset());
+        *cx.local.desired_yaw = 90.0;
     }
     cx.shared.tx.lock(|tx| {
         writeln!(
             tx,
-            "measured_yaw {yaw} desired_yaw {} base_speed {}",
+            "measured_yaw {yaw} desired_yaw {} base_speed {} yaw_error {yaw_error}",
             *cx.local.desired_yaw,
             base_speed / 10.0
         )

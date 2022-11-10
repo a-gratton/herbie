@@ -4,8 +4,8 @@
 mod config;
 mod filter;
 mod motors;
-mod turning_test;
-// mod linear_test;
+// mod turning_test;
+mod linear_test;
 
 #[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2, SPI3, SPI4, EXTI1])]
 mod app {
@@ -253,13 +253,12 @@ mod app {
         let button = gpioc.pc13.into_input();
 
         // set up turning pid
-        let turning_pid = pid::Pid::new(2.5, 0.0, 0.0, 2640.0, 2640.0, 2640.0, 2640.0, 0.0);
+        let turning_pid = pid::Pid::new(5.2, 0.001, 2.8, 2640.0, 2640.0, 2640.0, 2640.0, 0.0);
 
         // set up linear pid
-        let yaw_compensation_pid =
-            pid::Pid::new(0.0, 0.0, 0.0, 1320.0, 1320.0, 1320.0, 1320.0, 0.0);
+        let yaw_compensation_pid = pid::Pid::new(0.05, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.0);
 
-        // writeln!(tx, "system initialized\r").unwrap();
+        writeln!(tx, "system initialized\r").unwrap();
 
         let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
         let desired_yaw: f32 = 0.0;
@@ -270,8 +269,8 @@ mod app {
         let led = gpioa.pa5.into_push_pull_output();
         filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
         speed_control::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
-        turning_test_task::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
-        // linear_test_task::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+        // turning_test_task::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+        linear_test_task::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
         blinky::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
 
         (
@@ -317,17 +316,17 @@ mod app {
         fn speed_control(context: speed_control::Context);
     }
 
-    // use crate::linear_test::linear_test_task;
-    // extern "Rust" {
-    //     #[task(local=[desired_yaw, currently_running, button, yaw_compensation_pid, start_ticks], shared=[imu_filter, motor_setpoints])]
-    //     fn linear_test_task(mut cx: linear_test_task::Context);
-    // }
-
-    use crate::turning_test::turning_test_task;
+    use crate::linear_test::linear_test_task;
     extern "Rust" {
-        #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button, turning_pid], shared=[tx, imu_filter, motor_setpoints], priority=2)]
-        fn turning_test_task(mut cx: turning_test_task::Context);
+        #[task(local=[desired_yaw, currently_running, button, yaw_compensation_pid, start_ticks], shared=[tx, imu_filter, motor_setpoints])]
+        fn linear_test_task(mut cx: linear_test_task::Context);
     }
+
+    // use crate::turning_test::turning_test_task;
+    // extern "Rust" {
+    //     #[task(local=[desired_yaw, num_samples_within_yaw_tolerance, currently_turning, button, turning_pid], shared=[tx, imu_filter, motor_setpoints], priority=2)]
+    //     fn turning_test_task(mut cx: turning_test_task::Context);
+    // }
 
     #[task(local=[led], shared=[], priority=1)]
     fn blinky(cx: blinky::Context) {

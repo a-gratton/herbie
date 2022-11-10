@@ -1,9 +1,10 @@
 use crate::app::linear_test_task;
 use crate::app::monotonics;
+use crate::config::sys_config;
+use core::fmt::Write;
 use cortex_m::asm;
 use libm::fabsf;
 use rtic::Mutex;
-use crate::config::sys_config;
 use systick_monotonic::fugit::Duration;
 
 // assume IMU is mounted upside down
@@ -35,7 +36,10 @@ pub fn linear_test_task(mut cx: linear_test_task::Context) {
                 asm::nop();
             }
             *cx.local.currently_running = false;
-        } else if (monotonics::now().ticks() - *cx.local.start_ticks) as f32 * sys_config::SECONDS_PER_TICK > 3.0 {
+        } else if (monotonics::now().ticks() - *cx.local.start_ticks) as f32
+            * sys_config::SECONDS_PER_TICK
+            > 10.0
+        {
             // set motor set points
             cx.shared.motor_setpoints.lock(|motor_setpoints| {
                 motor_setpoints.f_right = 0.0;
@@ -47,19 +51,19 @@ pub fn linear_test_task(mut cx: linear_test_task::Context) {
         } else {
             // compute right and left side speed set points
             let yaw_error: f32 = compute_yaw_error(yaw, *cx.local.desired_yaw);
-            let base_speed: f32 = 2000.0;
-            let yaw_compensated_speed_offset: f32 = cx
+            let base_speed: f32 = 1300.0;
+            let yaw_alpha: f32 = cx
                 .local
                 .yaw_compensation_pid
                 .next_control_output(fabsf(yaw_error))
                 .output;
             let (right_side_speed, left_side_speed): (f32, f32) = {
-                if yaw_error > 0.0 {
+                if yaw_error < 0.0 {
                     // current heading to the right of center
-                    (base_speed, base_speed - yaw_compensated_speed_offset)
+                    (base_speed, base_speed * (1.0 - yaw_alpha))
                 } else {
                     // current heading to the left of center
-                    (base_speed - yaw_compensated_speed_offset, base_speed)
+                    (base_speed * (1.0 - yaw_alpha), base_speed)
                 }
             };
             // set motor set points
@@ -78,6 +82,7 @@ pub fn linear_test_task(mut cx: linear_test_task::Context) {
         *cx.local.start_ticks = monotonics::now().ticks();
         *cx.local.desired_yaw = yaw;
     }
+    cx.shared.tx.lock(|tx| writeln!(tx, "yaw {yaw}").unwrap());
     // run at 100 Hz
     linear_test_task::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
 }
