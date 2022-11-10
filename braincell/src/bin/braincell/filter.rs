@@ -1,7 +1,7 @@
 use crate::app::{filter_data, monotonics};
 use crate::config::sys_config;
 use braincell::filtering::{ahrs::ahrs_filter::AHRSFilter, ahrs::ahrs_filter::ImuData, sma};
-use core::f32::consts::PI;
+use core::{f32::consts::PI, fmt::Write};
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
 
@@ -106,6 +106,11 @@ pub fn filter_data(mut cx: filter_data::Context) {
             }
             Err(_e) => {}
         }
+    }
+    if matches!(cx.local.tof_front.clear_interrupt(cx.local.i2c), Err(_)) {
+        cx.shared.tx.lock(|tx| {
+            writeln!(tx, "tof clear interrupt failed\r").unwrap();
+        });
     }
 
     // read IMU
