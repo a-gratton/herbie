@@ -35,7 +35,7 @@ mod app {
     struct Shared {
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         imu_filter: filter::ImuFilter<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
-        tof_front_filter: sma::SmaFilter<u16, 10>,
+        tof_front_filter: sma::SmaFilter<i32, 10>,
         motor_setpoints: controller::motor::MotorSetPoints,
     }
 
@@ -193,7 +193,7 @@ mod app {
         )
         .unwrap();
 
-        let tof_front_filter = sma::SmaFilter::<u16, 10>::new();
+        let tof_front_filter = sma::SmaFilter::<i32, 10>::new();
         let imu_filter =
             filter::ImuFilter::<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
                 mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI),
