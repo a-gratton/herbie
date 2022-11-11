@@ -4,12 +4,14 @@
 mod config;
 mod filter;
 mod motors;
+mod supervisor;
 
-#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
+#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2, SPI3, SPI4, EXTI1])]
 mod app {
     use crate::config::sys_config;
     use crate::config::tuning;
     use crate::filter;
+    use crate::supervisor;
     use braincell::controller;
     use braincell::drivers::encoder::n20;
     use braincell::drivers::imu::icm20948;
@@ -19,8 +21,9 @@ mod app {
     use core::fmt::Write;
     use cortex_m::asm;
     use panic_write::PanicHandler;
+    use pid;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
+        gpio::{Alternate, Input, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
         i2c::{I2c, Mode as i2cMode},
         pac::{I2C2, SPI1, TIM1, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
         prelude::*,
@@ -34,8 +37,8 @@ mod app {
     #[shared]
     struct Shared {
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
-        imu_filter: filter::ImuFilter<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
-        tof_front_filter: sma::SmaFilter<i32, 10>,
+        imu_filter: filter::ImuFilter<{ tuning::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
+        tof_front_filter: sma::SmaFilter<i32, { tuning::TOF_SMA_FILTER_SIZE }>,
         motor_setpoints: controller::motor::MotorSetPoints,
     }
 
@@ -47,7 +50,6 @@ mod app {
             Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
             Pin<'A', 4, Output<PushPull>>,
         >,
-        filter_data_prev_ticks: u64,
         motors: controller::motor::Motors<
             mdd3a::MDD3A<PwmChannel<TIM1, 0>, PwmChannel<TIM1, 1>>,
             mdd3a::MDD3A<PwmChannel<TIM1, 2>, PwmChannel<TIM1, 3>>,
@@ -61,6 +63,15 @@ mod app {
             n20::N20<Qei<TIM4, (Pin<'B', 6, Alternate<2>>, Pin<'B', 7, Alternate<2>>)>>,
         encoder_r_right:
             n20::N20<Qei<TIM5, (Pin<'A', 0, Alternate<2>>, Pin<'A', 1, Alternate<2>>)>>,
+        filter_data_prev_ticks: u64,
+        button: Pin<'C', 13, Input>,
+        led: Pin<'A', 5, Output>,
+        state: supervisor::State,
+        curr_leg: usize,
+        num_samples_within_tolerance: usize,
+        distance_pid: pid::Pid<f32>,
+        yaw_compensation_pid: pid::Pid<f32>,
+        prev_distance: i32,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -119,6 +130,12 @@ mod app {
         .unwrap();
         let mut tx = PanicHandler::new(serial);
 
+        // set up button
+        let button = gpioc.pc13.into_input();
+
+        // set up led
+        let led = gpioa.pa5.into_push_pull_output();
+
         // set up ToF sensors
         let tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12> =
             match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_FRONT_ADDRESS) {
@@ -163,15 +180,15 @@ mod app {
             }
         }
 
-        let tof_front_filter = sma::SmaFilter::<i32, 10>::new();
+        let tof_front_filter = sma::SmaFilter::<i32, { tuning::TOF_SMA_FILTER_SIZE }>::new();
         let imu_filter =
-            filter::ImuFilter::<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
+            filter::ImuFilter::<{ tuning::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
                 mahony::MahonyFilter::new(
                     mahony::DEFAULT_KP,
                     mahony::DEFAULT_KI,
-                    sys_config::IMU_USE_MAG,
+                    tuning::IMU_USE_MAG,
                 ),
-                sys_config::IMU_GYRO_BIAS_DPS,
+                tuning::IMU_GYRO_BIAS_DPS,
             );
 
         //set up PWM
@@ -241,11 +258,39 @@ mod app {
         let encoder_f_right = n20::N20::new(encoder3_qei);
         let encoder_r_right = n20::N20::new(encoder4_qei);
 
+        // supervisor state variables
+        let state: supervisor::State = supervisor::State::Idle;
+        let curr_leg: usize = 0;
+        let num_samples_within_tolerance: usize = 0;
+        let prev_distance: i32 = 0;
+        let distance_pid = pid::Pid::new(
+            tuning::DISTANCE_PID_KP,
+            tuning::DISTANCE_PID_KI,
+            tuning::DISTANCE_PID_KD,
+            tuning::DISTANCE_PID_P_LIM,
+            tuning::DISTANCE_PID_I_LIM,
+            tuning::DISTANCE_PID_D_LIM,
+            tuning::DISTANCE_PID_OUT_LIM,
+            0.0,
+        );
+        let yaw_compensation_pid = pid::Pid::new(
+            tuning::YAW_COMPENSATION_PID_KP,
+            tuning::YAW_COMPENSATION_PID_KI,
+            tuning::YAW_COMPENSATION_PID_KD,
+            tuning::YAW_COMPENSATION_PID_P_LIM,
+            tuning::YAW_COMPENSATION_PID_I_LIM,
+            tuning::YAW_COMPENSATION_PID_D_LIM,
+            tuning::YAW_COMPENSATION_PID_OUT_LIM,
+            0.0,
+        );
+
         writeln!(tx, "system initialized\r").unwrap();
 
         let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
-        filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
-        speed_control::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+        filter_data::spawn_after(Duration::<u64, 1, 1000>::millis(1)).unwrap();
+        speed_control::spawn_after(Duration::<u64, 1, 1000>::millis(1)).unwrap();
+        blinky::spawn_after(Duration::<u64, 1, 1000>::millis(1)).unwrap();
+        supervisor_task::spawn_after(Duration::<u64, 1, 1000>::millis(1000)).unwrap();
 
         (
             Shared {
@@ -258,12 +303,20 @@ mod app {
                 i2c,
                 tof_front,
                 imu,
-                filter_data_prev_ticks,
                 motors,
                 encoder_f_left,
                 encoder_r_left,
                 encoder_f_right,
                 encoder_r_right,
+                filter_data_prev_ticks,
+                button,
+                led,
+                state,
+                curr_leg,
+                num_samples_within_tolerance,
+                distance_pid,
+                yaw_compensation_pid,
+                prev_distance,
             },
             init::Monotonics(mono),
         )
@@ -271,14 +324,26 @@ mod app {
 
     use crate::filter::filter_data;
     extern "Rust" {
-        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[tx, imu_filter, tof_front_filter])]
+        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[tx, imu_filter, tof_front_filter], priority=4)]
         fn filter_data(mut cx: filter_data::Context);
     }
 
     use crate::motors::speed_control;
     extern "Rust" {
-        #[task(local=[motors, encoder_f_left, encoder_r_left, encoder_f_right, encoder_r_right], shared=[tx, motor_setpoints])]
+        #[task(local=[motors, encoder_f_left, encoder_r_left, encoder_f_right, encoder_r_right], shared=[tx, motor_setpoints], priority=3)]
         fn speed_control(context: speed_control::Context);
+    }
+
+    use crate::supervisor::supervisor_task;
+    extern "Rust" {
+        #[task(local=[button, state, curr_leg, num_samples_within_tolerance, distance_pid, yaw_compensation_pid, prev_distance], shared=[motor_setpoints, tof_front_filter, imu_filter], priority=2)]
+        fn supervisor_task(context: supervisor_task::Context);
+    }
+
+    #[task(local=[led], shared=[], priority=1)]
+    fn blinky(cx: blinky::Context) {
+        cx.local.led.toggle();
+        blinky::spawn_after(Duration::<u64, 1, 1000>::millis(1000)).unwrap();
     }
 
     #[idle]
