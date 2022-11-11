@@ -183,8 +183,12 @@ mod app {
         let tof_front_filter = sma::SmaFilter::<i32, { tuning::TOF_SMA_FILTER_SIZE }>::new();
         let imu_filter =
             filter::ImuFilter::<{ tuning::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
-                mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI, tuning::IMU_USE_MAG),
-                tuning::IMU_GYRO_BIAS_DPS
+                mahony::MahonyFilter::new(
+                    mahony::DEFAULT_KP,
+                    mahony::DEFAULT_KI,
+                    tuning::IMU_USE_MAG,
+                ),
+                tuning::IMU_GYRO_BIAS_DPS,
             );
 
         //set up PWM
