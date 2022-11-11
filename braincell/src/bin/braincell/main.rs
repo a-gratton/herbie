@@ -319,13 +319,13 @@ mod app {
 
     use crate::filter::filter_data;
     extern "Rust" {
-        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[imu_filter, tof_front_filter, tx], priority=3)]
+        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[imu_filter, tof_front_filter, tx], priority=4)]
         fn filter_data(mut cx: filter_data::Context);
     }
 
     use crate::motors::speed_control;
     extern "Rust" {
-        #[task(local=[motors, encoder_f_left, encoder_r_left, encoder_f_right, encoder_r_right], shared=[motor_setpoints], priority=4)]
+        #[task(local=[motors, encoder_f_left, encoder_r_left, encoder_f_right, encoder_r_right], shared=[motor_setpoints], priority=3)]
         fn speed_control(context: speed_control::Context);
     }
 
