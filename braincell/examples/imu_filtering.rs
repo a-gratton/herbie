@@ -162,7 +162,7 @@ mod app {
         let mag_y = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
         let mag_z = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
         let madgwick = madgwick::MadgwickFilter::new(imu_gyro_bias.2);
-        let mahony = mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI);
+        let mahony = mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI, true);
 
         let prev_ticks = monotonics::now().ticks();
 

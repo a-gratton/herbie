@@ -14,15 +14,17 @@ pub struct MahonyFilter {
     e: (f32, f32, f32),      // integral error
     kp: f32,                 // proportional gain
     ki: f32,                 // integral gain
+    use_mag: bool,           // whether or not to use magnetometer data
 }
 
 impl MahonyFilter {
-    pub fn new(kp: f32, ki: f32) -> Self {
+    pub fn new(kp: f32, ki: f32, use_mag: bool) -> Self {
         Self {
             q: (1.0, 0.0, 0.0, 0.0),
             e: (0.0, 0.0, 0.0),
             kp,
             ki,
+            use_mag,
         }
     }
 }
@@ -86,9 +88,14 @@ impl AHRSFilter for MahonyFilter {
         let wz = 2.0 * bx * (q1q3 + q2q4) + 2.0 * bz * (0.5 - q2q2 - q3q3);
 
         // Error is cross product between estimated direction and measured direction of gravity
-        let ex = (ay * vz - az * vy) + (my * wz - mz * wy);
-        let ey = (az * vx - ax * vz) + (mz * wx - mx * wz);
-        let ez = (ax * vy - ay * vx) + (mx * wy - my * wx);
+        let mut ex = ay * vz - az * vy;
+        let mut ey = az * vx - ax * vz;
+        let mut ez = ax * vy - ay * vx;
+        if self.use_mag {
+            ex += my * wz - mz * wy;
+            ey += mz * wx - mx * wz;
+            ez += mx * wy - my * wx;
+        }
         if self.ki > 0.0 {
             self.e.0 += ex * deltat; // accumulate integral error
             self.e.1 += ey * deltat;
