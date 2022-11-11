@@ -6,7 +6,7 @@ mod filter;
 mod motors;
 mod supervisor;
 
-#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
+#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2, SPI3, SPI4, EXTI1])]
 mod app {
     use crate::config::sys_config;
     use crate::config::tuning;
@@ -37,8 +37,8 @@ mod app {
     #[shared]
     struct Shared {
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
-        imu_filter: filter::ImuFilter<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
-        tof_front_filter: sma::SmaFilter<i32, 10>,
+        imu_filter: filter::ImuFilter<{ tuning::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
+        tof_front_filter: sma::SmaFilter<i32, { tuning::TOF_SMA_FILTER_SIZE }>,
         motor_setpoints: controller::motor::MotorSetPoints,
     }
 
@@ -68,9 +68,10 @@ mod app {
         led: Pin<'A', 5, Output>,
         state: supervisor::State,
         curr_leg: usize,
-        num_samples_within_yaw_tolerance: usize,
-        turning_pid: pid::Pid<f32>,
+        num_samples_within_tolerance: usize,
+        distance_pid: pid::Pid<f32>,
         yaw_compensation_pid: pid::Pid<f32>,
+        prev_distance: i32,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -179,15 +180,11 @@ mod app {
             }
         }
 
-        let tof_front_filter = sma::SmaFilter::<i32, 10>::new();
+        let tof_front_filter = sma::SmaFilter::<i32, { tuning::TOF_SMA_FILTER_SIZE }>::new();
         let imu_filter =
-            filter::ImuFilter::<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
-                mahony::MahonyFilter::new(
-                    mahony::DEFAULT_KP,
-                    mahony::DEFAULT_KI,
-                    sys_config::IMU_USE_MAG,
-                ),
-                sys_config::IMU_GYRO_BIAS_DPS,
+            filter::ImuFilter::<{ tuning::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
+                mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI, tuning::IMU_USE_MAG),
+                tuning::IMU_GYRO_BIAS_DPS
             );
 
         //set up PWM
@@ -260,15 +257,16 @@ mod app {
         // supervisor state variables
         let state: supervisor::State = supervisor::State::Idle;
         let curr_leg: usize = 0;
-        let num_samples_within_yaw_tolerance: usize = 0;
-        let turning_pid = pid::Pid::new(
-            tuning::TURNING_PID_KP,
-            tuning::TURNING_PID_KI,
-            tuning::TURNING_PID_KD,
-            tuning::TURNING_PID_P_LIM,
-            tuning::TURNING_PID_I_LIM,
-            tuning::TURNING_PID_D_LIM,
-            tuning::TURNING_PID_OUT_LIM,
+        let num_samples_within_tolerance: usize = 0;
+        let prev_distance: i32 = 0;
+        let distance_pid = pid::Pid::new(
+            tuning::DISTANCE_PID_KP,
+            tuning::DISTANCE_PID_KI,
+            tuning::DISTANCE_PID_KD,
+            tuning::DISTANCE_PID_P_LIM,
+            tuning::DISTANCE_PID_I_LIM,
+            tuning::DISTANCE_PID_D_LIM,
+            tuning::DISTANCE_PID_OUT_LIM,
             0.0,
         );
         let yaw_compensation_pid = pid::Pid::new(
@@ -285,8 +283,10 @@ mod app {
         writeln!(tx, "system initialized\r").unwrap();
 
         let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
-        filter_data::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
-        speed_control::spawn_after(Duration::<u64, 1, 1000>::secs(1)).unwrap();
+        filter_data::spawn_after(Duration::<u64, 1, 1000>::millis(1)).unwrap();
+        speed_control::spawn_after(Duration::<u64, 1, 1000>::millis(1)).unwrap();
+        blinky::spawn_after(Duration::<u64, 1, 1000>::millis(1)).unwrap();
+        supervisor_task::spawn_after(Duration::<u64, 1, 1000>::millis(1000)).unwrap();
 
         (
             Shared {
@@ -309,9 +309,10 @@ mod app {
                 led,
                 state,
                 curr_leg,
-                num_samples_within_yaw_tolerance,
-                turning_pid,
+                num_samples_within_tolerance,
+                distance_pid,
                 yaw_compensation_pid,
+                prev_distance,
             },
             init::Monotonics(mono),
         )
@@ -319,20 +320,26 @@ mod app {
 
     use crate::filter::filter_data;
     extern "Rust" {
-        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[tx, imu_filter, tof_front_filter])]
+        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[tx, imu_filter, tof_front_filter], priority=3)]
         fn filter_data(mut cx: filter_data::Context);
     }
 
     use crate::motors::speed_control;
     extern "Rust" {
-        #[task(local=[motors, encoder_f_left, encoder_r_left, encoder_f_right, encoder_r_right], shared=[tx, motor_setpoints])]
+        #[task(local=[motors, encoder_f_left, encoder_r_left, encoder_f_right, encoder_r_right], shared=[tx, motor_setpoints], priority=4)]
         fn speed_control(context: speed_control::Context);
     }
 
     use crate::supervisor::supervisor_task;
     extern "Rust" {
-        #[task(local=[button, led, state, curr_leg, num_samples_within_yaw_tolerance, turning_pid, yaw_compensation_pid], shared=[motor_setpoints, tof_front_filter, imu_filter])]
+        #[task(local=[button, state, curr_leg, num_samples_within_tolerance, distance_pid, yaw_compensation_pid, prev_distance], shared=[motor_setpoints, tof_front_filter, imu_filter], priority=2)]
         fn supervisor_task(context: supervisor_task::Context);
+    }
+
+    #[task(local=[led], shared=[], priority=1)]
+    fn blinky(cx: blinky::Context) {
+        cx.local.led.toggle();
+        blinky::spawn_after(Duration::<u64, 1, 1000>::millis(1000)).unwrap();
     }
 
     #[idle]
