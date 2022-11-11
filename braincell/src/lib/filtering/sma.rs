@@ -1,4 +1,4 @@
-use num_traits::{Num, NumAssignOps, NumCast};
+use num_traits::{Num, NumAssignOps, NumCast, Signed};
 
 pub struct SmaFilter<ItemT, const SIZE: usize> {
     buff: [ItemT; SIZE],
@@ -8,7 +8,7 @@ pub struct SmaFilter<ItemT, const SIZE: usize> {
 }
 impl<ItemT, const SIZE: usize> SmaFilter<ItemT, SIZE>
 where
-    ItemT: Num + NumAssignOps + NumCast + core::marker::Copy,
+    ItemT: Num + NumAssignOps + NumCast + Signed + core::marker::Copy,
 {
     pub fn new() -> SmaFilter<ItemT, SIZE> {
         return SmaFilter::default();
