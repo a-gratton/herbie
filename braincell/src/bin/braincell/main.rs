@@ -163,41 +163,15 @@ mod app {
             }
         }
 
-        // IMU calibration
-        let imu_gyro_bias = {
-            if sys_config::CALIBRATE_IMU {
-                writeln!(tx, "calibrating imu...").unwrap();
-                let num_samples = sys_config::IMU_CALIBRATION_NUM_SAMPLES;
-                let mut gyro_sum: (f32, f32, f32) = (0.0, 0.0, 0.0);
-                for _ in 1..=num_samples {
-                    while !imu.data_ready().unwrap_or(false) {}
-                    if let Ok(_) = imu.read_data() {
-                        gyro_sum.0 += imu.get_gyro_x();
-                        gyro_sum.1 += imu.get_gyro_y();
-                        gyro_sum.2 += imu.get_gyro_z();
-                    }
-                }
-                (
-                    gyro_sum.0 / (num_samples as f32),
-                    gyro_sum.1 / (num_samples as f32),
-                    gyro_sum.2 / (num_samples as f32),
-                )
-            } else {
-                sys_config::DEFAULT_IMU_GYRO_BIAS_DPS
-            }
-        };
-        writeln!(
-            tx,
-            "imu gyro bias (deg/s): [{}, {}, {}]",
-            imu_gyro_bias.0, imu_gyro_bias.1, imu_gyro_bias.2
-        )
-        .unwrap();
-
         let tof_front_filter = sma::SmaFilter::<i32, 10>::new();
         let imu_filter =
             filter::ImuFilter::<{ sys_config::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
-                mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI),
-                imu_gyro_bias,
+                mahony::MahonyFilter::new(
+                    mahony::DEFAULT_KP,
+                    mahony::DEFAULT_KI,
+                    sys_config::IMU_USE_MAG,
+                ),
+                sys_config::IMU_GYRO_BIAS_DPS,
             );
 
         //set up PWM
