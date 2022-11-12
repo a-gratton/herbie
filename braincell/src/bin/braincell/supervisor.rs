@@ -104,11 +104,8 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         State::Linear => {
             block_if_button_pressed(cx.local.button);
             // check if linear leg is complete
-            if fabsf(
-                (distance
-                    - (sys_config::DISTANCE_TARGETS_MM[*cx.local.curr_leg]
-                        - sys_config::ROBOT_CENTER_TO_TOF_MM)) as f32,
-            ) < tuning::DISTANCE_TOLERANCE_MM as f32
+            if fabsf((distance - sys_config::DISTANCE_TARGETS_MM[*cx.local.curr_leg]) as f32)
+                < tuning::DISTANCE_TOLERANCE_MM as f32
                 && within_range(
                     pitch,
                     tuning::PITCH_LOWER_BOUND_DEG,
@@ -167,8 +164,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 cx.local.yaw_compensation_pid.reset_integral_term();
                 cx.local.distance_pid.reset_integral_term();
                 cx.local.distance_pid.setpoint =
-                    (sys_config::DISTANCE_TARGETS_MM[*cx.local.curr_leg]
-                        - sys_config::ROBOT_CENTER_TO_TOF_MM) as f32;
+                    sys_config::DISTANCE_TARGETS_MM[*cx.local.curr_leg] as f32;
                 cx.shared
                     .tof_front_filter
                     .lock(|tof_front_filter| tof_front_filter.reset());

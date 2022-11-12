@@ -13,7 +13,6 @@ pub const MOTOR_DIRECTIONS: MotorDirections = MotorDirections {
 
 pub const NUM_LEGS_IN_RACE: usize = 11;
 
-pub const ROBOT_CENTER_TO_TOF_MM: i32 = 100;
 pub const DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-    [150, 150, 150, 450, 450, 450, 450, 750, 750, 750, 750];
+    [120, 120, 120, 420, 420, 420, 420, 720, 720, 720, 720];
 pub const MAX_DISTANCE_MM: i32 = 1800;
