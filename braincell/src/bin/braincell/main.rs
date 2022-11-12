@@ -23,9 +23,9 @@ mod app {
     use panic_write::PanicHandler;
     use pid;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Input, Output, Pin, PushPull, PA9, PB10, PC1, PC12, PC2},
+        gpio::{Alternate, Input, Output, Pin, PushPull, PA8, PA9, PB10, PC1, PC12, PC2, PC9},
         i2c::{I2c, Mode as i2cMode},
-        pac::{I2C2, SPI2, TIM1, TIM10, TIM12, TIM14, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
+        pac::{I2C2, I2C3, SPI2, TIM1, TIM10, TIM12, TIM14, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
         prelude::*,
         qei::Qei,
         serial::{Config, Serial, Tx},
@@ -39,13 +39,16 @@ mod app {
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         imu_filter: filter::ImuFilter<{ tuning::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
         tof_front_filter: sma::SmaFilter<i32, { tuning::TOF_SMA_FILTER_SIZE }>,
+        tof_left_filter: sma::SmaFilter<i32, { tuning::TOF_SMA_FILTER_SIZE }>,
         motor_setpoints: controller::motor::MotorSetPoints,
     }
 
     #[local]
     struct Local {
-        i2c: I2c<I2C2, (PB10, PC12)>,
+        i2c2: I2c<I2C2, (PB10, PC12)>,
+        i2c3: I2c<I2C3, (PA8, PC9)>,
         tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12>,
+        tof_left: vl53l1x::VL53L1<I2C3, PA8, PC9>,
         imu: icm20948::ICM20948<
             Spi<SPI2, (PA9<Alternate<5>>, PC2<Alternate<5>>, PC1<Alternate<7>>)>,
             Pin<'B', 12, Output<PushPull>>,
@@ -70,8 +73,8 @@ mod app {
         curr_leg: usize,
         num_samples_within_tolerance: usize,
         distance_pid: pid::Pid<f32>,
-        yaw_compensation_pid: pid::Pid<f32>,
-        prev_distance: i32,
+        side_dist_compensation_pid: pid::Pid<f32>,
+        prev_front_distance: i32,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -89,11 +92,21 @@ mod app {
         let gpioc = ctx.device.GPIOC.split();
 
         // configure I2C
-        let scl = gpiob.pb10;
-        let sda = gpioc.pc12;
-        let mut i2c = I2c::new(
+        let scl2 = gpiob.pb10;
+        let sda2 = gpioc.pc12;
+        let scl3 = gpioa.pa8;
+        let sda3 = gpioc.pc9;
+        let mut i2c2 = I2c::new(
             ctx.device.I2C2,
-            (scl, sda),
+            (scl2, sda2),
+            i2cMode::Standard {
+                frequency: 100.kHz(),
+            },
+            &clocks,
+        );
+        let mut i2c3 = I2c::new(
+            ctx.device.I2C3,
+            (scl3, sda3),
             i2cMode::Standard {
                 frequency: 100.kHz(),
             },
@@ -138,7 +151,7 @@ mod app {
 
         // set up ToF sensors
         let tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12> =
-            match vl53l1x::VL53L1::new(&mut i2c, sys_config::TOF_FRONT_ADDRESS) {
+            match vl53l1x::VL53L1::new(&mut i2c2, sys_config::TOF_FRONT_ADDRESS) {
                 Ok(val) => val,
                 Err(_) => {
                     writeln!(tx, "tof_front initialization failed\r").unwrap();
@@ -146,13 +159,30 @@ mod app {
                 }
             };
         if let Err(_) = tof_front.start_ranging(
-            &mut i2c,
+            &mut i2c2,
             Some(vl53l1x::DistanceMode::Short),
             Some(vl53l1x::TimingBudget::Tb15ms),
             Some(20),
         ) {
             writeln!(tx, "error starting tof_front ranging").unwrap();
             panic!("tof_front start_ranging failed");
+        }
+        let tof_left: vl53l1x::VL53L1<I2C3, PA8, PC9> =
+            match vl53l1x::VL53L1::new(&mut i2c3, sys_config::TOF_LEFT_ADDRESS) {
+                Ok(val) => val,
+                Err(_) => {
+                    writeln!(tx, "tof_left initialization failed\r").unwrap();
+                    panic!("tof_left initialization failed");
+                }
+            };
+        if let Err(_) = tof_left.start_ranging(
+            &mut i2c3,
+            Some(vl53l1x::DistanceMode::Short),
+            Some(vl53l1x::TimingBudget::Tb15ms),
+            Some(20),
+        ) {
+            writeln!(tx, "error starting tof_left ranging").unwrap();
+            panic!("tof_left start_ranging failed");
         }
 
         // set up IMU sensor
@@ -180,7 +210,9 @@ mod app {
             }
         }
 
+        // set up filters
         let tof_front_filter = sma::SmaFilter::<i32, { tuning::TOF_SMA_FILTER_SIZE }>::new();
+        let tof_left_filter = sma::SmaFilter::<i32, { tuning::TOF_SMA_FILTER_SIZE }>::new();
         let imu_filter =
             filter::ImuFilter::<{ tuning::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
                 mahony::MahonyFilter::new(
@@ -261,7 +293,7 @@ mod app {
         let state: supervisor::State = supervisor::State::Idle;
         let curr_leg: usize = 0;
         let num_samples_within_tolerance: usize = 0;
-        let prev_distance: i32 = 0;
+        let prev_front_distance: i32 = 0;
         let distance_pid = pid::Pid::new(
             tuning::DISTANCE_PID_KP,
             tuning::DISTANCE_PID_KI,
@@ -272,14 +304,14 @@ mod app {
             tuning::DISTANCE_PID_OUT_LIM,
             0.0,
         );
-        let yaw_compensation_pid = pid::Pid::new(
-            tuning::YAW_COMPENSATION_PID_KP,
-            tuning::YAW_COMPENSATION_PID_KI,
-            tuning::YAW_COMPENSATION_PID_KD,
-            tuning::YAW_COMPENSATION_PID_P_LIM,
-            tuning::YAW_COMPENSATION_PID_I_LIM,
-            tuning::YAW_COMPENSATION_PID_D_LIM,
-            tuning::YAW_COMPENSATION_PID_OUT_LIM,
+        let side_dist_compensation_pid = pid::Pid::new(
+            tuning::SIDE_DIST_COMPENSATION_PID_KP,
+            tuning::SIDE_DIST_COMPENSATION_PID_KI,
+            tuning::SIDE_DIST_COMPENSATION_PID_KD,
+            tuning::SIDE_DIST_COMPENSATION_PID_P_LIM,
+            tuning::SIDE_DIST_COMPENSATION_PID_I_LIM,
+            tuning::SIDE_DIST_COMPENSATION_PID_D_LIM,
+            tuning::SIDE_DIST_COMPENSATION_PID_OUT_LIM,
             0.0,
         );
 
@@ -295,12 +327,15 @@ mod app {
             Shared {
                 tx,
                 tof_front_filter,
+                tof_left_filter,
                 imu_filter,
                 motor_setpoints,
             },
             Local {
-                i2c,
+                i2c2,
+                i2c3,
                 tof_front,
+                tof_left,
                 imu,
                 motors,
                 encoder_f_left,
@@ -314,8 +349,8 @@ mod app {
                 curr_leg,
                 num_samples_within_tolerance,
                 distance_pid,
-                yaw_compensation_pid,
-                prev_distance,
+                side_dist_compensation_pid,
+                prev_front_distance,
             },
             init::Monotonics(mono),
         )
@@ -323,7 +358,7 @@ mod app {
 
     use crate::filter::filter_data;
     extern "Rust" {
-        #[task(local=[imu, tof_front, i2c, filter_data_prev_ticks], shared=[tx, imu_filter, tof_front_filter], priority=4)]
+        #[task(local=[imu, tof_front, tof_left, i2c2, i2c3, filter_data_prev_ticks], shared=[tx, imu_filter, tof_front_filter, tof_left_filter], priority=4)]
         fn filter_data(mut cx: filter_data::Context);
     }
 
@@ -335,7 +370,7 @@ mod app {
 
     use crate::supervisor::supervisor_task;
     extern "Rust" {
-        #[task(local=[button, state, curr_leg, num_samples_within_tolerance, distance_pid, yaw_compensation_pid, prev_distance], shared=[motor_setpoints, tof_front_filter, imu_filter], priority=2)]
+        #[task(local=[button, state, curr_leg, num_samples_within_tolerance, distance_pid, side_dist_compensation_pid, prev_front_distance], shared=[motor_setpoints, tof_front_filter, tof_left_filter, imu_filter], priority=2)]
         fn supervisor_task(context: supervisor_task::Context);
     }
 

@@ -93,16 +93,16 @@ pub fn filter_data(mut cx: filter_data::Context) {
         (task_start_ticks - *cx.local.filter_data_prev_ticks) as f32 * sys_config::SECONDS_PER_TICK;
     *cx.local.filter_data_prev_ticks = task_start_ticks;
 
-    // read ToF
+    // read ToF sensors
     if cx
         .local
         .tof_front
-        .check_for_data_ready(cx.local.i2c)
+        .check_for_data_ready(cx.local.i2c2)
         .unwrap_or(false)
     {
-        match cx.local.tof_front.get_distance(cx.local.i2c) {
+        match cx.local.tof_front.get_distance(cx.local.i2c2) {
             Ok(distance) => {
-                if matches!(cx.local.tof_front.distance_valid(cx.local.i2c), Ok(true)) {
+                if matches!(cx.local.tof_front.distance_valid(cx.local.i2c2), Ok(true)) {
                     cx.shared.tof_front_filter.lock(|tof_front_filter| {
                         tof_front_filter.insert(distance as i32);
                     });
@@ -111,7 +111,30 @@ pub fn filter_data(mut cx: filter_data::Context) {
             Err(_e) => {}
         }
     }
-    if matches!(cx.local.tof_front.clear_interrupt(cx.local.i2c), Err(_)) {
+    if matches!(cx.local.tof_front.clear_interrupt(cx.local.i2c2), Err(_)) {
+        cx.shared.tx.lock(|tx| {
+            writeln!(tx, "tof clear interrupt failed\r").unwrap();
+        });
+    }
+
+    if cx
+        .local
+        .tof_left
+        .check_for_data_ready(cx.local.i2c3)
+        .unwrap_or(false)
+    {
+        match cx.local.tof_left.get_distance(cx.local.i2c3) {
+            Ok(distance) => {
+                if matches!(cx.local.tof_left.distance_valid(cx.local.i2c3), Ok(true)) {
+                    cx.shared.tof_left_filter.lock(|tof_left_filter| {
+                        tof_left_filter.insert(distance as i32);
+                    });
+                }
+            }
+            Err(_e) => {}
+        }
+    }
+    if matches!(cx.local.tof_left.clear_interrupt(cx.local.i2c3), Err(_)) {
         cx.shared.tx.lock(|tx| {
             writeln!(tx, "tof clear interrupt failed\r").unwrap();
         });
