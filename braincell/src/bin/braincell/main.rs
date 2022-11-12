@@ -6,7 +6,7 @@ mod filter;
 mod motors;
 mod supervisor;
 
-#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2, SPI3, SPI4, EXTI1])]
+#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1, SPI3, SPI4, EXTI1])]
 mod app {
     use crate::config::sys_config;
     use crate::config::tuning;
@@ -23,9 +23,9 @@ mod app {
     use panic_write::PanicHandler;
     use pid;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Input, Output, Pin, PushPull, PB10, PB3, PB4, PB5, PC12},
+        gpio::{Alternate, Input, Output, Pin, PushPull, PA9, PB10, PC1, PC12, PC2},
         i2c::{I2c, Mode as i2cMode},
-        pac::{I2C2, SPI1, TIM1, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
+        pac::{I2C2, SPI2, TIM1, TIM10, TIM12, TIM14, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
         prelude::*,
         qei::Qei,
         serial::{Config, Serial, Tx},
@@ -47,18 +47,18 @@ mod app {
         i2c: I2c<I2C2, (PB10, PC12)>,
         tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12>,
         imu: icm20948::ICM20948<
-            Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
-            Pin<'A', 4, Output<PushPull>>,
+            Spi<SPI2, (PA9<Alternate<5>>, PC2<Alternate<5>>, PC1<Alternate<7>>)>,
+            Pin<'B', 12, Output<PushPull>>,
         >,
         motors: controller::motor::Motors<
-            mdd3a::MDD3A<PwmChannel<TIM1, 0>, PwmChannel<TIM1, 1>>,
             mdd3a::MDD3A<PwmChannel<TIM1, 2>, PwmChannel<TIM1, 3>>,
             mdd3a::MDD3A<PwmChannel<TIM8, 0>, PwmChannel<TIM8, 1>>,
-            mdd3a::MDD3A<PwmChannel<TIM8, 2>, PwmChannel<TIM8, 3>>,
+            mdd3a::MDD3A<PwmChannel<TIM12, 0>, PwmChannel<TIM12, 1>>,
+            mdd3a::MDD3A<PwmChannel<TIM10, 0>, PwmChannel<TIM14, 0>>,
         >,
         encoder_f_left:
             n20::N20<Qei<TIM2, (Pin<'A', 15, Alternate<1>>, Pin<'B', 9, Alternate<1>>)>>,
-        encoder_r_left: n20::N20<Qei<TIM3, (Pin<'A', 6, Alternate<2>>, Pin<'A', 7, Alternate<2>>)>>,
+        encoder_r_left: n20::N20<Qei<TIM3, (Pin<'A', 6, Alternate<2>>, Pin<'B', 5, Alternate<2>>)>>,
         encoder_f_right:
             n20::N20<Qei<TIM4, (Pin<'B', 6, Alternate<2>>, Pin<'B', 7, Alternate<2>>)>>,
         encoder_r_right:
@@ -101,12 +101,12 @@ mod app {
         );
 
         // configure IMU spi and cs
-        let imu_cs = gpioa.pa4.into_push_pull_output();
-        let imu_sclk = gpiob.pb3.into_alternate();
-        let imu_mosi = gpiob.pb5.into_alternate();
-        let imu_miso = gpiob.pb4.into_alternate();
+        let imu_cs = gpiob.pb12.into_push_pull_output();
+        let imu_sclk = gpioa.pa9.into_alternate();
+        let imu_mosi = gpioc.pc1.into_alternate();
+        let imu_miso = gpioc.pc2.into_alternate();
         let imu_spi = Spi::new(
-            ctx.device.SPI1,
+            ctx.device.SPI2,
             (imu_sclk, imu_miso, imu_mosi),
             Mode {
                 polarity: Polarity::IdleLow,
@@ -192,25 +192,24 @@ mod app {
             );
 
         //set up PWM
-        let channels1 = (
-            gpioa.pa8.into_alternate(),
-            gpioa.pa9.into_alternate(),
-            gpioa.pa10.into_alternate(),
-            gpioa.pa11.into_alternate(),
-        );
-        let pwms1 = ctx.device.TIM1.pwm_hz(channels1, 20.kHz(), &clocks).split();
-        let pwm1 = (pwms1.0, pwms1.1);
-        let pwm2 = (pwms1.2, pwms1.3);
+        let channels1 = (gpioa.pa10.into_alternate(), gpioa.pa11.into_alternate());
+        let pwm1 = ctx.device.TIM1.pwm_hz(channels1, 20.kHz(), &clocks).split();
 
-        let channels2 = (
-            gpioc.pc6.into_alternate(),
-            gpioc.pc7.into_alternate(),
-            gpioc.pc8.into_alternate(),
-            gpioc.pc9.into_alternate(),
-        );
-        let pwms2 = ctx.device.TIM8.pwm_hz(channels2, 20.kHz(), &clocks).split();
-        let pwm3 = (pwms2.0, pwms2.1);
-        let pwm4 = (pwms2.2, pwms2.3);
+        let channels2 = (gpioc.pc6.into_alternate(), gpioc.pc7.into_alternate());
+        let pwm2 = ctx.device.TIM8.pwm_hz(channels2, 20.kHz(), &clocks).split();
+
+        let channelsmth = (gpiob.pb14.into_alternate(), gpiob.pb15.into_alternate());
+        let pwm3 = ctx
+            .device
+            .TIM12
+            .pwm_hz(channelsmth, 20.kHz(), &clocks)
+            .split();
+
+        let channel3 = gpiob.pb8.into_alternate();
+        let channel4 = gpioa.pa7.into_alternate();
+        let pwmtest1 = ctx.device.TIM10.pwm_hz(channel3, 20.kHz(), &clocks).split();
+        let pwmtest2 = ctx.device.TIM14.pwm_hz(channel4, 20.kHz(), &clocks).split();
+        let pwm4 = (pwmtest1, pwmtest2);
 
         let motor_f_left = mdd3a::MDD3A::new(pwm1);
         let motor_r_left = mdd3a::MDD3A::new(pwm2);
@@ -243,7 +242,7 @@ mod app {
         );
         let encoder2_qei = Qei::new(
             ctx.device.TIM3,
-            (gpioa.pa6.into_alternate(), gpioa.pa7.into_alternate()),
+            (gpioa.pa6.into_alternate(), gpiob.pb5.into_alternate()),
         );
         let encoder3_qei = Qei::new(
             ctx.device.TIM4,
