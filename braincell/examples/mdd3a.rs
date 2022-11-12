@@ -10,7 +10,7 @@ mod app {
     use panic_write::PanicHandler;
     use stm32f4xx_hal::{
         pac::USART2,
-        pac::{TIM1, TIM8},
+        pac::{TIM1, TIM10, TIM14, TIM8},
         prelude::*,
         serial::{Config, Serial, Tx},
         timer::pwm::PwmChannel,
@@ -23,10 +23,10 @@ mod app {
     #[local]
     struct Local {
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
-        motor1: mdd3a::MDD3A<PwmChannel<TIM1, 0>, PwmChannel<TIM1, 1>>,
-        motor2: mdd3a::MDD3A<PwmChannel<TIM1, 2>, PwmChannel<TIM1, 3>>,
-        motor3: mdd3a::MDD3A<PwmChannel<TIM8, 0>, PwmChannel<TIM8, 1>>,
-        motor4: mdd3a::MDD3A<PwmChannel<TIM8, 2>, PwmChannel<TIM8, 3>>,
+        motor1: mdd3a::MDD3A<PwmChannel<TIM1, 2>, PwmChannel<TIM1, 3>>,
+        motor2: mdd3a::MDD3A<PwmChannel<TIM8, 0>, PwmChannel<TIM8, 1>>,
+        motor3: mdd3a::MDD3A<PwmChannel<TIM8, 2>, PwmChannel<TIM8, 3>>,
+        motor4: mdd3a::MDD3A<PwmChannel<TIM10, 0>, PwmChannel<TIM14, 0>>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -40,6 +40,7 @@ mod app {
         let clocks = rcc.cfgr.sysclk(48.MHz()).freeze();
 
         let gpioa = ctx.device.GPIOA.split();
+        let gpiob = ctx.device.GPIOB.split();
         let gpioc = ctx.device.GPIOC.split();
 
         // set up uart tx
@@ -58,15 +59,8 @@ mod app {
         let mut tx = PanicHandler::new(serial);
 
         //set up PWM
-        let channels1 = (
-            gpioa.pa8.into_alternate(),
-            gpioa.pa9.into_alternate(),
-            gpioa.pa10.into_alternate(),
-            gpioa.pa11.into_alternate(),
-        );
-        let pwms1 = ctx.device.TIM1.pwm_hz(channels1, 20.kHz(), &clocks).split();
-        let pwm1 = (pwms1.0, pwms1.1);
-        let pwm2 = (pwms1.2, pwms1.3);
+        let channels1 = (gpioa.pa10.into_alternate(), gpioa.pa11.into_alternate());
+        let pwm1 = ctx.device.TIM1.pwm_hz(channels1, 20.kHz(), &clocks).split();
 
         let channels2 = (
             gpioc.pc6.into_alternate(),
@@ -75,14 +69,21 @@ mod app {
             gpioc.pc9.into_alternate(),
         );
         let pwms2 = ctx.device.TIM8.pwm_hz(channels2, 20.kHz(), &clocks).split();
-        let pwm3 = (pwms2.0, pwms2.1);
-        let pwm4 = (pwms2.2, pwms2.3);
+        let pwm2 = (pwms2.0, pwms2.1);
+        let pwm3 = (pwms2.2, pwms2.3);
+
+        let channel3 = gpiob.pb8.into_alternate();
+        let channel4 = gpioa.pa7.into_alternate();
+        let pwmtest1 = ctx.device.TIM10.pwm_hz(channel3, 20.kHz(), &clocks).split();
+        let pwmtest2 = ctx.device.TIM14.pwm_hz(channel4, 20.kHz(), &clocks).split();
+        let pwm4 = (pwmtest1, pwmtest2);
 
         let mut motor1 = mdd3a::MDD3A::new(pwm1);
         let mut motor2 = mdd3a::MDD3A::new(pwm2);
         let mut motor3 = mdd3a::MDD3A::new(pwm3);
         let mut motor4 = mdd3a::MDD3A::new(pwm4);
 
+        //default pwm channels are not enabled
         motor1.start();
         motor2.start();
         motor3.start();
