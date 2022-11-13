@@ -1,7 +1,8 @@
 use crate::app::supervisor_task;
+use crate::config::tuning::{PITCH_LOWER_BOUND_DEG, PITCH_UPPER_BOUND_DEG};
 use crate::config::{sys_config, tuning};
 use cortex_m::asm;
-use libm::{fabsf, fmaxf, fminf};
+use libm::{fabsf, fminf};
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
 
@@ -85,7 +86,19 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         tuning::PITCH_UPPER_BOUND_DEG,
     ) {
         front_distance = *cx.local.prev_front_distance;
-        max_base_speed = tuning::MAX_LINEAR_SPEED_WHEN_TILTED_DPS;
+    } else if !*cx.local.in_drop {
+        // we are level and not in the drop trap, set speed to max
+        max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
+    }
+
+    // detect entering the drop trap, set lower speed max
+    if !*cx.local.in_drop && pitch < PITCH_LOWER_BOUND_DEG {
+        *cx.local.in_drop = true;
+        max_base_speed = tuning::MAX_LINEAR_SPEED_IN_DROP_DPS;
+    }
+    // detect leaving the drop trap, speed will be reset once we level out
+    if *cx.local.in_drop && pitch > PITCH_UPPER_BOUND_DEG {
+        *cx.local.in_drop = false;
     }
 
     match cx.local.state {

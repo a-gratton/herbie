@@ -11,8 +11,6 @@ pub const TOF_FRONT_SMA_FILTER_SIZE: usize = 3;
 pub const TOF_LEFT_SMA_FILTER_SIZE: usize = 1;
 
 pub const IMU_GYRO_BIAS_DPS: (f32, f32, f32) = (0.26560888, 0.29839727, 0.335);
-pub const IMU_MAHONY_FILTER_KP: f32 = 50.0;
-pub const IMU_MAHONY_FILTER_KI: f32 = 0.1;
 pub const IMU_USE_MAG: bool = false;
 
 pub const DISTANCE_TOLERANCE_MM: i32 = 20;
@@ -25,7 +23,7 @@ pub const STEADY_STATE_NUM_SAMPLES: usize = 1;
 pub const MAX_TURNING_SPEED_DPS: f32 = 2400.0;
 
 pub const MAX_LINEAR_SPEED_DPS: f32 = 1500.0;
-pub const MAX_LINEAR_SPEED_WHEN_TILTED_DPS: f32 = 700.0;
+pub const MAX_LINEAR_SPEED_IN_DROP_DPS: f32 = 700.0;
 
 pub const TURNING_SPEED_SLOPE: f32 = 4.5;
 

@@ -22,7 +22,6 @@ mod app {
     use cortex_m::asm;
     use panic_write::PanicHandler;
     use pid;
-    use stm32f4xx_hal::pac::can1::tx;
     use stm32f4xx_hal::{
         gpio::{Alternate, Input, Output, Pin, PushPull, PA8, PA9, PB10, PC1, PC12, PC2, PC9},
         i2c::{I2c, Mode as i2cMode},
@@ -76,6 +75,7 @@ mod app {
         distance_pid: pid::Pid<f32>,
         side_dist_compensation_pid: pid::Pid<f32>,
         prev_front_distance: i32,
+        in_drop: bool,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -295,6 +295,7 @@ mod app {
         let curr_leg: usize = 0;
         let num_samples_within_tolerance: usize = 0;
         let prev_front_distance: i32 = sys_config::MAX_TOF_DISTANCE_MM;
+        let in_drop: bool = false;
         let distance_pid = pid::Pid::new(
             tuning::DISTANCE_PID_KP,
             tuning::DISTANCE_PID_KI,
@@ -352,6 +353,7 @@ mod app {
                 distance_pid,
                 side_dist_compensation_pid,
                 prev_front_distance,
+                in_drop,
             },
             init::Monotonics(mono),
         )
@@ -371,7 +373,7 @@ mod app {
 
     use crate::supervisor::supervisor_task;
     extern "Rust" {
-        #[task(local=[button, state, curr_leg, num_samples_within_tolerance, distance_pid, side_dist_compensation_pid, prev_front_distance], shared=[motor_setpoints, tof_front_filter, tof_left_filter, imu_filter, tx], priority=2)]
+        #[task(local=[button, state, curr_leg, num_samples_within_tolerance, distance_pid, side_dist_compensation_pid, prev_front_distance, in_drop], shared=[motor_setpoints, tof_front_filter, tof_left_filter, imu_filter, tx], priority=2)]
         fn supervisor_task(context: supervisor_task::Context);
     }
 
