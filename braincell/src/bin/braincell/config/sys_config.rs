@@ -11,15 +11,11 @@ pub const MOTOR_DIRECTIONS: MotorDirections = MotorDirections {
     r_right: Direction::Forward,
 };
 
-pub const NUM_LEGS_IN_RACE: usize = 4;
+pub const NUM_LEGS_IN_RACE: usize = 11;
 
-// pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-//     [120, 120, 120, 420, 420, 420, 420, 720, 720, 720, 720];
-// pub const LEFT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-//     [70, 70, 70, 70, 370, 370, 370, 370, 670, 670, 670]; 
 pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-    [120, 120, 120, 420];
+    [120, 120, 120, 420, 420, 420, 420, 720, 720, 720, 720];
 pub const LEFT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-    [90, 90, 90, 90];
-pub const MAX_TOF_DISTANCE_MM: i32 = 1800;
+    [90, 90, 90, 90, 390, 390, 390, 390, 690, 690, 690];
 pub const MIN_TOF_DISTANCE_MM: i32 = 40;
+pub const MAX_TOF_DISTANCE_MM: i32 = 1800;

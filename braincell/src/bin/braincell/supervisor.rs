@@ -1,7 +1,7 @@
 use crate::app::supervisor_task;
 use crate::config::{sys_config, tuning};
 use cortex_m::asm;
-use libm::{fabsf, fminf};
+use libm::{fabsf, fmaxf, fminf};
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
 
@@ -60,12 +60,12 @@ where
 
 pub fn supervisor_task(mut cx: supervisor_task::Context) {
     // get TOF and IMU readings
-    let mut front_distance: i32 = sys_config::MAX_TOF_DISTANCE_MM;
+    let mut front_distance: i32 = *cx.local.prev_front_distance;
     let mut left_distance: i32 = sys_config::MIN_TOF_DISTANCE_MM;
     cx.shared.tof_front_filter.lock(|tof_front_filter| {
         front_distance = tof_front_filter
             .filtered()
-            .unwrap_or(sys_config::MAX_TOF_DISTANCE_MM)
+            .unwrap_or(*cx.local.prev_front_distance)
     });
     cx.shared.tof_left_filter.lock(|tof_left_filter| {
         left_distance = tof_left_filter
@@ -77,6 +77,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         .imu_filter
         .lock(|imu_filter| (pitch, roll, yaw) = imu_filter.filtered().unwrap_or((0.0, 0.0, 0.0))); // IMU is mounted sideways -> swap pitch and roll
 
+    let mut max_base_speed: f32 = tuning::MAX_LINEAR_SPEED_DPS;
     // if Herbie is tilted in pitch, take "distance" to be previous measured distance when Herbie was level with the ground
     if !within_range(
         pitch,
@@ -84,6 +85,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         tuning::PITCH_UPPER_BOUND_DEG,
     ) {
         front_distance = *cx.local.prev_front_distance;
+        max_base_speed = tuning::MAX_LINEAR_SPEED_WHEN_TILTED_DPS;
     }
 
     match cx.local.state {
@@ -143,6 +145,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     left_distance,
                     sys_config::LEFT_DISTANCE_TARGETS_MM[*cx.local.curr_leg],
                 );
+                cx.local.distance_pid.output_limit = max_base_speed;
                 let base_speed = cx
                     .local
                     .distance_pid

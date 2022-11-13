@@ -18,11 +18,11 @@ mod app {
     use braincell::drivers::motor::mdd3a;
     use braincell::drivers::tof::vl53l1x;
     use braincell::filtering::{ahrs::mahony, sma};
-    use stm32f4xx_hal::pac::can1::tx;
     use core::fmt::Write;
     use cortex_m::asm;
     use panic_write::PanicHandler;
     use pid;
+    use stm32f4xx_hal::pac::can1::tx;
     use stm32f4xx_hal::{
         gpio::{Alternate, Input, Output, Pin, PushPull, PA8, PA9, PB10, PC1, PC12, PC2, PC9},
         i2c::{I2c, Mode as i2cMode},
@@ -294,7 +294,7 @@ mod app {
         let state: supervisor::State = supervisor::State::Idle;
         let curr_leg: usize = 0;
         let num_samples_within_tolerance: usize = 0;
-        let prev_front_distance: i32 = 0;
+        let prev_front_distance: i32 = sys_config::MAX_TOF_DISTANCE_MM;
         let distance_pid = pid::Pid::new(
             tuning::DISTANCE_PID_KP,
             tuning::DISTANCE_PID_KI,
@@ -378,9 +378,7 @@ mod app {
     #[task(local=[led], shared=[tx], priority=1)]
     fn blinky(mut cx: blinky::Context) {
         cx.local.led.toggle();
-        cx.shared.tx.lock(|tx|
-            writeln!(tx, "blink\r").unwrap()
-        );
+        cx.shared.tx.lock(|tx| writeln!(tx, "blink\r").unwrap());
         blinky::spawn_after(Duration::<u64, 1, 1000>::millis(1000)).unwrap();
     }
 

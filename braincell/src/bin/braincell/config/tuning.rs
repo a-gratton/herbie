@@ -18,13 +18,14 @@ pub const IMU_USE_MAG: bool = false;
 pub const DISTANCE_TOLERANCE_MM: i32 = 20;
 pub const YAW_TOLERANCE_DEG: f32 = 4.5;
 
-pub const PITCH_LOWER_BOUND_DEG: f32 = -20.0;
-pub const PITCH_UPPER_BOUND_DEG: f32 = 20.0;
+pub const PITCH_LOWER_BOUND_DEG: f32 = -10.0;
+pub const PITCH_UPPER_BOUND_DEG: f32 = 10.0;
 
 pub const STEADY_STATE_NUM_SAMPLES: usize = 1;
 pub const MAX_TURNING_SPEED_DPS: f32 = 2400.0;
 
 pub const MAX_LINEAR_SPEED_DPS: f32 = 1500.0;
+pub const MAX_LINEAR_SPEED_WHEN_TILTED_DPS: f32 = 700.0;
 
 pub const TURNING_SPEED_SLOPE: f32 = 4.5;
 

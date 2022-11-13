@@ -59,13 +59,21 @@ impl AHRSFilter for MadgwickFilter {
         let q4q4 = q4 * q4;
 
         // Normalize accel data
-        let mut norm = 1.0 / sqrtf(ax * ax + ay * ay + az * az);
+        let mut norm = sqrtf(ax * ax + ay * ay + az * az);
+        if norm == 0.0 {
+            return;
+        }
+        norm = 1.0 / norm;
         ax *= norm;
         ay *= norm;
         az *= norm;
 
         // Normalize mag data
-        norm = 1.0 / sqrtf(mx * mx + my * my + mz * mz);
+        norm = sqrtf(mx * mx + my * my + mz * mz);
+        if norm == 0.0 {
+            return;
+        }
+        norm = 1.0 / norm;
         mx *= norm;
         my *= norm;
         mz *= norm;
@@ -111,7 +119,11 @@ impl AHRSFilter for MadgwickFilter {
             + (-_4bx * q4 + _2bz * q2) * (_2bx * (0.5 - q3q3 - q4q4) + _2bz * (q2q4 - q1q3) - mx)
             + (-_2bx * q1 + _2bz * q3) * (_2bx * (q2q3 - q1q4) + _2bz * (q1q2 + q3q4) - my)
             + _2bx * q2 * (_2bx * (q1q3 + q2q4) + _2bz * (0.5 - q2q2 - q3q3) - mz);
-        norm = 1.0 / sqrtf(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4); // normalise step magnitude
+        norm = sqrtf(s1 * s1 + s2 * s2 + s3 * s3 + s4 * s4); // normalise step magnitude
+        if norm == 0.0 {
+            return;
+        }
+        norm = 1.0 / norm;
         s1 *= norm;
         s2 *= norm;
         s3 *= norm;
@@ -128,7 +140,11 @@ impl AHRSFilter for MadgwickFilter {
         q2 += qdot2 * deltat;
         q3 += qdot3 * deltat;
         q4 += qdot4 * deltat;
-        norm = 1.0 / sqrtf(q1 * q1 + q2 * q2 + q3 * q3 + q4 * q4); // Normalize quaternion
+        norm = sqrtf(q1 * q1 + q2 * q2 + q3 * q3 + q4 * q4); // Normalize quaternion
+        if norm == 0.0 {
+            return;
+        }
+        norm = norm / 1.0;
         self.q.0 = q1 * norm;
         self.q.1 = q2 * norm;
         self.q.2 = q3 * norm;
