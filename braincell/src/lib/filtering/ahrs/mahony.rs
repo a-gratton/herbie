@@ -59,13 +59,21 @@ impl AHRSFilter for MahonyFilter {
         let q4q4: f32 = q4 * q4;
 
         // Normalize accelerometer measurement
-        let mut norm: f32 = 1.0 / sqrtf(ax * ax + ay * ay + az * az);
+        let mut norm: f32 = sqrtf(ax * ax + ay * ay + az * az);
+        if norm == 0.0 {
+            return;
+        }
+        norm = 1.0 / norm;
         ax *= norm;
         ay *= norm;
         az *= norm;
 
         // Normalize magnetometer measurement
-        norm = 1.0 / sqrtf(mx * mx + my * my + mz * mz);
+        norm = sqrtf(mx * mx + my * my + mz * mz);
+        if norm == 0.0 {
+            return;
+        }
+        norm = 1.0 / norm;
         mx *= norm;
         my *= norm;
         mz *= norm;

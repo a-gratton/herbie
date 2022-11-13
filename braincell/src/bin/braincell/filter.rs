@@ -113,7 +113,7 @@ pub fn filter_data(mut cx: filter_data::Context) {
     }
     if matches!(cx.local.tof_front.clear_interrupt(cx.local.i2c2), Err(_)) {
         cx.shared.tx.lock(|tx| {
-            writeln!(tx, "tof clear interrupt failed\r").unwrap();
+            writeln!(tx, "tof front clear interrupt failed\r").unwrap();
         });
     }
 
@@ -136,7 +136,7 @@ pub fn filter_data(mut cx: filter_data::Context) {
     }
     if matches!(cx.local.tof_left.clear_interrupt(cx.local.i2c3), Err(_)) {
         cx.shared.tx.lock(|tx| {
-            writeln!(tx, "tof clear interrupt failed\r").unwrap();
+            writeln!(tx, "tof left clear interrupt failed\r").unwrap();
         });
     }
 

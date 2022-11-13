@@ -18,7 +18,7 @@ fn within_range<T: core::cmp::PartialOrd>(val: T, lower_bound: T, upper_bound: T
 fn turning_speed_profile(yaw_error: f32) -> f32 {
     let mut speed: f32 = fminf(
         tuning::MAX_TURNING_SPEED_DPS,
-        tuning::TURNING_SPEED_SLOPE * fabsf(yaw_error),
+        tuning::TURNING_SPEED_SLOPE * fabsf(yaw_error) + 50.0,
     );
     if yaw_error < 0.0 {
         speed *= -1.0;
@@ -154,7 +154,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     .next_control_output(fabsf(left_dist_error as f32))
                     .output;
                 let (right_side_speed, left_side_speed): (f32, f32) = {
-                    if left_dist_error > 0 {
+                    if left_dist_error < 0 {
                         // too far from wall, move left
                         (base_speed, base_speed * (1.0 - dist_comp_alpha))
                     } else {
