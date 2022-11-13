@@ -1,7 +1,7 @@
 #![no_main]
 #![no_std]
 
-#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI2])]
+#[rtic::app(device = stm32f4xx_hal::pac, peripherals = true, dispatchers = [SPI1])]
 mod app {
     use braincell::drivers::imu::icm20948;
     use braincell::filtering::ahrs::{
@@ -13,8 +13,8 @@ mod app {
     use cortex_m::asm;
     use panic_write::PanicHandler;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Output, Pin, PushPull, PB3, PB4, PB5},
-        pac::{SPI1, USART2},
+        gpio::{Alternate, Output, Pin, PushPull, PA9, PC1, PC2},
+        pac::{SPI2, USART2},
         prelude::*,
         serial::{Config, Serial, Tx},
         spi::{Mode, Phase, Polarity, Spi},
@@ -32,8 +32,8 @@ mod app {
     #[local]
     struct Local {
         imu: icm20948::ICM20948<
-            Spi<SPI1, (PB3<Alternate<5>>, PB4<Alternate<5>>, PB5<Alternate<5>>)>,
-            Pin<'A', 4, Output<PushPull>>,
+            Spi<SPI2, (PA9<Alternate<5>>, PC2<Alternate<5>>, PC1<Alternate<7>>)>,
+            Pin<'B', 12, Output<PushPull>>,
         >,
         madgwick: madgwick::MadgwickFilter,
         mahony: mahony::MahonyFilter,
@@ -62,6 +62,7 @@ mod app {
 
         let gpioa = ctx.device.GPIOA.split();
         let gpiob = ctx.device.GPIOB.split();
+        let gpioc = ctx.device.GPIOC.split();
 
         // Set up uart tx
         let tx_pin = gpioa.pa2.into_alternate();
@@ -78,11 +79,11 @@ mod app {
         let mut tx = PanicHandler::new(serial);
 
         // Set up imu spi
-        let imu_sclk = gpiob.pb3.into_alternate();
-        let imu_mosi = gpiob.pb5.into_alternate();
-        let imu_miso = gpiob.pb4.into_alternate();
+        let imu_sclk = gpioa.pa9.into_alternate();
+        let imu_mosi = gpioc.pc1.into_alternate();
+        let imu_miso = gpioc.pc2.into_alternate();
         let imu_spi = Spi::new(
-            ctx.device.SPI1,
+            ctx.device.SPI2,
             (imu_sclk, imu_miso, imu_mosi),
             Mode {
                 polarity: Polarity::IdleLow,
@@ -93,7 +94,7 @@ mod app {
         );
 
         // Set up imu cs
-        let imu_cs = gpioa.pa4.into_push_pull_output();
+        let imu_cs = gpiob.pb12.into_push_pull_output();
 
         // Set up ICM-20948 imu
         writeln!(tx, "Initializing IMU...").unwrap();
