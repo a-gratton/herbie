@@ -2,9 +2,41 @@ use crate::app::supervisor_task;
 use crate::config::tuning::{PITCH_LOWER_BOUND_DEG, PITCH_UPPER_BOUND_DEG};
 use crate::config::{sys_config, tuning};
 use cortex_m::asm;
+use embedded_hal::digital::v2::InputPin;
 use libm::{fabsf, fminf};
+use num_traits::float::FloatCore;
+use pid::Pid;
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
+
+pub struct Data<P: InputPin, FloatT: FloatCore> {
+    button: P,
+    state: State,
+    curr_leg: usize,
+    num_samples_within_tolerance: usize,
+    distance_pid: pid::Pid<FloatT>,
+    side_dist_compensation_pid: pid::Pid<FloatT>,
+    prev_front_distance: i32,
+    in_drop: bool,
+}
+impl<P, FloatT> Data<P, FloatT>
+where
+    P: InputPin,
+    FloatT: FloatCore,
+{
+    pub fn new(button: P, distance_pid: Pid<FloatT>, side_dist_comp_pid: Pid<FloatT>) -> Self {
+        Data {
+            button: button,
+            state: State::Idle,
+            curr_leg: 0,
+            num_samples_within_tolerance: 0,
+            distance_pid: distance_pid,
+            side_dist_compensation_pid: side_dist_comp_pid,
+            prev_front_distance: sys_config::MAX_TOF_DISTANCE_MM,
+            in_drop: false,
+        }
+    }
+}
 
 pub enum State {
     Idle,
@@ -61,12 +93,12 @@ where
 
 pub fn supervisor_task(mut cx: supervisor_task::Context) {
     // get TOF and IMU readings
-    let mut front_distance: i32 = *cx.local.prev_front_distance;
+    let mut front_distance: i32 = cx.local.supervisor_state.prev_front_distance;
     let mut left_distance: i32 = sys_config::MIN_TOF_DISTANCE_MM;
     cx.shared.tof_front_filter.lock(|tof_front_filter| {
         front_distance = tof_front_filter
             .filtered()
-            .unwrap_or(*cx.local.prev_front_distance)
+            .unwrap_or(cx.local.supervisor_state.prev_front_distance)
     });
     cx.shared.tof_left_filter.lock(|tof_left_filter| {
         left_distance = tof_left_filter
@@ -85,23 +117,23 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         tuning::PITCH_LOWER_BOUND_DEG,
         tuning::PITCH_UPPER_BOUND_DEG,
     ) {
-        front_distance = *cx.local.prev_front_distance;
-    } else if !*cx.local.in_drop {
+        front_distance = cx.local.supervisor_state.prev_front_distance;
+    } else if !cx.local.supervisor_state.in_drop {
         // we are level and not in the drop trap, set speed to max
         max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
     }
 
     // detect entering the drop trap, set lower speed max
-    if !*cx.local.in_drop && pitch < PITCH_LOWER_BOUND_DEG {
-        *cx.local.in_drop = true;
+    if !cx.local.supervisor_state.in_drop && pitch < PITCH_LOWER_BOUND_DEG {
+        cx.local.supervisor_state.in_drop = true;
         max_base_speed = tuning::MAX_LINEAR_SPEED_IN_DROP_DPS;
     }
     // detect leaving the drop trap, speed will be reset once we level out
-    if *cx.local.in_drop && pitch > PITCH_UPPER_BOUND_DEG {
-        *cx.local.in_drop = false;
+    if cx.local.supervisor_state.in_drop && pitch > PITCH_UPPER_BOUND_DEG {
+        cx.local.supervisor_state.in_drop = false;
     }
 
-    match cx.local.state {
+    match cx.local.supervisor_state.state {
         State::Idle => {
             // set motor set points to 0
             cx.shared.motor_setpoints.lock(|motor_setpoints| {
@@ -111,15 +143,19 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 motor_setpoints.r_right = 0.0;
             });
             // check for button press and release
-            if cx.local.button.is_low() {
-                while cx.local.button.is_low() {
+            if cx.local.supervisor_state.button.is_low() {
+                while cx.local.supervisor_state.button.is_low() {
                     asm::nop();
                 }
-                *cx.local.curr_leg = 0;
-                *cx.local.state = State::Linear;
-                cx.local.side_dist_compensation_pid.setpoint = 0.0; // set point for yaw error
-                cx.local.distance_pid.setpoint =
-                    sys_config::FRONT_DISTANCE_TARGETS_MM[*cx.local.curr_leg] as f32;
+                cx.local.supervisor_state.curr_leg = 0;
+                cx.local.supervisor_state.state = State::Linear;
+                cx.local
+                    .supervisor_state
+                    .side_dist_compensation_pid
+                    .setpoint = 0.0; // set point for yaw error
+                cx.local.supervisor_state.distance_pid.setpoint =
+                    sys_config::FRONT_DISTANCE_TARGETS_MM[cx.local.supervisor_state.curr_leg]
+                        as f32;
                 cx.shared
                     .tof_front_filter
                     .lock(|tof_front_filter| tof_front_filter.reset());
@@ -127,12 +163,12 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             }
         }
         State::Linear => {
-            block_if_button_pressed(cx.local.button);
+            block_if_button_pressed(&cx.local.supervisor_state.button);
             // check if linear leg is complete
             if fabsf(
                 (compute_dist_error(
                     front_distance,
-                    sys_config::FRONT_DISTANCE_TARGETS_MM[*cx.local.curr_leg],
+                    sys_config::FRONT_DISTANCE_TARGETS_MM[cx.local.supervisor_state.curr_leg],
                 )) as f32,
             ) < tuning::DISTANCE_TOLERANCE_MM as f32
                 && within_range(
@@ -141,31 +177,34 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     tuning::PITCH_UPPER_BOUND_DEG,
                 )
             {
-                *cx.local.num_samples_within_tolerance += 1;
-                if *cx.local.curr_leg == sys_config::NUM_LEGS_IN_RACE - 1 {
+                cx.local.supervisor_state.num_samples_within_tolerance += 1;
+                if cx.local.supervisor_state.curr_leg == sys_config::NUM_LEGS_IN_RACE - 1 {
                     // race is complete
-                    *cx.local.curr_leg = 0;
-                    *cx.local.state = State::Idle;
-                } else if *cx.local.num_samples_within_tolerance >= tuning::STEADY_STATE_NUM_SAMPLES
+                    cx.local.supervisor_state.curr_leg = 0;
+                    cx.local.supervisor_state.state = State::Idle;
+                } else if cx.local.supervisor_state.num_samples_within_tolerance
+                    >= tuning::STEADY_STATE_NUM_SAMPLES
                 {
-                    *cx.local.curr_leg += 1;
-                    *cx.local.state = State::Turning;
+                    cx.local.supervisor_state.curr_leg += 1;
+                    cx.local.supervisor_state.state = State::Turning;
                 }
             } else {
-                *cx.local.num_samples_within_tolerance = 0;
+                cx.local.supervisor_state.num_samples_within_tolerance = 0;
                 // compute right and left side speed set points
                 let left_dist_error: i32 = compute_dist_error(
                     left_distance,
-                    sys_config::LEFT_DISTANCE_TARGETS_MM[*cx.local.curr_leg],
+                    sys_config::LEFT_DISTANCE_TARGETS_MM[cx.local.supervisor_state.curr_leg],
                 );
-                cx.local.distance_pid.output_limit = max_base_speed;
+                cx.local.supervisor_state.distance_pid.output_limit = max_base_speed;
                 let base_speed = cx
                     .local
+                    .supervisor_state
                     .distance_pid
                     .next_control_output(front_distance as f32)
                     .output;
                 let dist_comp_alpha: f32 = cx
                     .local
+                    .supervisor_state
                     .side_dist_compensation_pid
                     .next_control_output(fabsf(left_dist_error as f32))
                     .output;
@@ -188,16 +227,20 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             }
         }
         State::Turning => {
-            block_if_button_pressed(cx.local.button);
+            block_if_button_pressed(&cx.local.supervisor_state.button);
             // check if yaw set point is reached
             let yaw_error: f32 = compute_yaw_error(yaw, 90.0);
             if fabsf(yaw_error) < tuning::YAW_TOLERANCE_DEG {
-                *cx.local.state = State::Linear;
-                *cx.local.num_samples_within_tolerance = 0;
-                cx.local.side_dist_compensation_pid.reset_integral_term();
-                cx.local.distance_pid.reset_integral_term();
-                cx.local.distance_pid.setpoint =
-                    sys_config::FRONT_DISTANCE_TARGETS_MM[*cx.local.curr_leg] as f32;
+                cx.local.supervisor_state.state = State::Linear;
+                cx.local.supervisor_state.num_samples_within_tolerance = 0;
+                cx.local
+                    .supervisor_state
+                    .side_dist_compensation_pid
+                    .reset_integral_term();
+                cx.local.supervisor_state.distance_pid.reset_integral_term();
+                cx.local.supervisor_state.distance_pid.setpoint =
+                    sys_config::FRONT_DISTANCE_TARGETS_MM[cx.local.supervisor_state.curr_leg]
+                        as f32;
                 cx.shared
                     .tof_front_filter
                     .lock(|tof_front_filter| tof_front_filter.reset());
@@ -216,7 +259,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             }
         }
     }
-    *cx.local.prev_front_distance = front_distance;
+    cx.local.supervisor_state.prev_front_distance = front_distance;
     // Run at 100Hz
     supervisor_task::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
 }

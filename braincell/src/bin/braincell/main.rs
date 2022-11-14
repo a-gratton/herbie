@@ -67,15 +67,8 @@ mod app {
         encoder_r_right:
             n20::N20<Qei<TIM5, (Pin<'A', 0, Alternate<2>>, Pin<'A', 1, Alternate<2>>)>>,
         filter_data_prev_ticks: u64,
-        button: Pin<'C', 13, Input>,
         led: Pin<'A', 5, Output>,
-        state: supervisor::State,
-        curr_leg: usize,
-        num_samples_within_tolerance: usize,
-        distance_pid: pid::Pid<f32>,
-        side_dist_compensation_pid: pid::Pid<f32>,
-        prev_front_distance: i32,
-        in_drop: bool,
+        supervisor_state: supervisor::Data<Pin<'C', 13, Input>, f32>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -291,11 +284,6 @@ mod app {
         let encoder_r_right = n20::N20::new(encoder4_qei);
 
         // supervisor state variables
-        let state: supervisor::State = supervisor::State::Idle;
-        let curr_leg: usize = 0;
-        let num_samples_within_tolerance: usize = 0;
-        let prev_front_distance: i32 = sys_config::MAX_TOF_DISTANCE_MM;
-        let in_drop: bool = false;
         let distance_pid = pid::Pid::new(
             tuning::DISTANCE_PID_KP,
             tuning::DISTANCE_PID_KI,
@@ -316,6 +304,8 @@ mod app {
             tuning::SIDE_DIST_COMPENSATION_PID_OUT_LIM,
             0.0,
         );
+        let supervisor_state =
+            supervisor::Data::new(button, distance_pid, side_dist_compensation_pid);
 
         writeln!(tx, "system initialized\r").unwrap();
 
@@ -345,15 +335,8 @@ mod app {
                 encoder_f_right,
                 encoder_r_right,
                 filter_data_prev_ticks,
-                button,
                 led,
-                state,
-                curr_leg,
-                num_samples_within_tolerance,
-                distance_pid,
-                side_dist_compensation_pid,
-                prev_front_distance,
-                in_drop,
+                supervisor_state,
             },
             init::Monotonics(mono),
         )
@@ -373,7 +356,7 @@ mod app {
 
     use crate::supervisor::supervisor_task;
     extern "Rust" {
-        #[task(local=[button, state, curr_leg, num_samples_within_tolerance, distance_pid, side_dist_compensation_pid, prev_front_distance, in_drop], shared=[motor_setpoints, tof_front_filter, tof_left_filter, imu_filter, tx], priority=2)]
+        #[task(local=[supervisor_state], shared=[motor_setpoints, tof_front_filter, tof_left_filter, imu_filter, tx], priority=2)]
         fn supervisor_task(context: supervisor_task::Context);
     }
 
