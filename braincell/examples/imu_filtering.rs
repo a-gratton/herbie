@@ -23,6 +23,7 @@ mod app {
 
     const DEG_TO_RAD: f32 = PI / 180.0;
     const SMA_FILTER_SIZE: usize = 5;
+    const IMU_GYRO_BIAS: (f32, f32, f32) = (-0.015826736, 0.20015818, 0.40443522);
 
     #[shared]
     struct Shared {
@@ -47,7 +48,6 @@ mod app {
         mag_y: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
         mag_z: sma::SmaFilter<f32, SMA_FILTER_SIZE>,
         prev_ticks: u64,
-        imu_gyro_bias: (f32, f32, f32),
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -123,35 +123,6 @@ mod app {
             }
         }
 
-        // IMU CALIBRATION SEQUENCE
-        writeln!(tx, "Calibrating IMU...").unwrap();
-        let num_samples = 10000;
-        let mut gyro_sum: (f32, f32, f32) = (0.0, 0.0, 0.0);
-        for _ in 1..=num_samples {
-            while !imu.data_ready().unwrap_or(false) {}
-            if let Ok(_) = imu.read_data() {
-                gyro_sum.0 += imu.get_gyro_x();
-                gyro_sum.1 += imu.get_gyro_y();
-                gyro_sum.2 += imu.get_gyro_z();
-            }
-        }
-        let imu_gyro_bias = (
-            gyro_sum.0 / (num_samples as f32),
-            gyro_sum.1 / (num_samples as f32),
-            gyro_sum.2 / (num_samples as f32),
-        );
-
-        writeln!(tx, "\n").unwrap();
-        writeln!(
-            tx,
-            "Average gyro values (deg/s): [{}, {}, {}]",
-            imu_gyro_bias.0, imu_gyro_bias.1, imu_gyro_bias.2
-        )
-        .unwrap();
-        writeln!(tx, "\n").unwrap();
-
-        asm::delay(1000000);
-
         // Set up imu filters
         let accel_x = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
         let accel_y = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
@@ -162,7 +133,7 @@ mod app {
         let mag_x = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
         let mag_y = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
         let mag_z = sma::SmaFilter::<f32, SMA_FILTER_SIZE>::new();
-        let madgwick = madgwick::MadgwickFilter::new(imu_gyro_bias.2);
+        let madgwick = madgwick::MadgwickFilter::new(IMU_GYRO_BIAS.2);
         let mahony = mahony::MahonyFilter::new(mahony::DEFAULT_KP, mahony::DEFAULT_KI, true);
 
         let prev_ticks = monotonics::now().ticks();
@@ -188,13 +159,12 @@ mod app {
                 mag_y,
                 mag_z,
                 prev_ticks,
-                imu_gyro_bias,
             },
             init::Monotonics(mono),
         )
     }
 
-    #[task(local = [imu, madgwick, mahony, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, prev_ticks, imu_gyro_bias], shared = [tx])]
+    #[task(local = [imu, madgwick, mahony, accel_x, accel_y, accel_z, gyro_x, gyro_y, gyro_z, mag_x, mag_y, mag_z, prev_ticks], shared = [tx])]
     fn imu_poll(mut cx: imu_poll::Context) {
         let task_start_ticks = monotonics::now().ticks();
 
@@ -210,7 +180,6 @@ mod app {
         let mag_z = cx.local.mag_z;
         let madgwick = cx.local.madgwick;
         let mahony = cx.local.mahony;
-        let imu_gyro_bias = cx.local.imu_gyro_bias;
 
         match imu.data_ready() {
             Ok(data_ready) => {
@@ -243,9 +212,9 @@ mod app {
                             ImuData {
                                 accel: (ax, ay, az),
                                 gyro: (
-                                    (gx - imu_gyro_bias.0) * DEG_TO_RAD,
-                                    (gy - imu_gyro_bias.1) * DEG_TO_RAD,
-                                    (gz - imu_gyro_bias.2) * DEG_TO_RAD,
+                                    (gx - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
+                                    (gy - IMU_GYRO_BIAS.1) * DEG_TO_RAD,
+                                    (gz - IMU_GYRO_BIAS.2) * DEG_TO_RAD,
                                 ),
                                 mag: (mx, my, mz),
                             },
@@ -256,9 +225,9 @@ mod app {
                             ImuData {
                                 accel: (ax, ay, az),
                                 gyro: (
-                                    (gx - imu_gyro_bias.0) * DEG_TO_RAD,
-                                    (gy - imu_gyro_bias.1) * DEG_TO_RAD,
-                                    (gz - imu_gyro_bias.2) * DEG_TO_RAD,
+                                    (gx - IMU_GYRO_BIAS.0) * DEG_TO_RAD,
+                                    (gy - IMU_GYRO_BIAS.1) * DEG_TO_RAD,
+                                    (gz - IMU_GYRO_BIAS.2) * DEG_TO_RAD,
                                 ),
                                 mag: (mx, my, mz),
                             },

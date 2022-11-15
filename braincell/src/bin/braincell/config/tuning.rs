@@ -7,36 +7,60 @@ pub const MOTOR_I_LIM: f32 = MOTOR_OUT_LIM;
 pub const MOTOR_D_LIM: f32 = MOTOR_OUT_LIM;
 
 pub const IMU_SMA_FILTER_SIZE: usize = 5;
-pub const TOF_SMA_FILTER_SIZE: usize = 5;
+pub const TOF_FRONT_SMA_FILTER_SIZE: usize = 3;
+pub const TOF_LEFT_SMA_FILTER_SIZE: usize = 1;
 
-pub const IMU_GYRO_BIAS_DPS: (f32, f32, f32) = (0.26560888, 0.29839727, 0.335);
-pub const IMU_USE_MAG: bool = false;
+pub const IMU_FILTER_KP: f32 = 0.0;
+pub const IMU_FILTER_KI: f32 = 0.0;
+pub const IMU_FILTER_USE_MAG: bool = false;
 
-pub const DISTANCE_TOLERANCE_MM: i32 = 20;
-pub const YAW_TOLERANCE_DEG: f32 = 2.5;
+pub const IMU_GYRO_BIAS_DPS: (f32, f32, f32) = (-0.015826736, 0.20015818, 0.40443522);
 
-pub const PITCH_LOWER_BOUND_DEG: f32 = -20.0;
-pub const PITCH_UPPER_BOUND_DEG: f32 = 20.0;
+pub const DISTANCE_TOLERANCE_MM: i32 = 30;
 
-pub const STEADY_STATE_NUM_SAMPLES: usize = 1;
+pub const DETECTION_PITCH_LOWER_BOUND_DEG: f32 = -5.0;
+pub const DETECTION_PITCH_UPPER_BOUND_DEG: f32 = 4.0;
+// pub const DETECTION_PITCH_LOWER_BOUND_DEG: f32 = -100.0;
+// pub const DETECTION_PITCH_UPPER_BOUND_DEG: f32 = 100.0;
+pub const DETECTION_NUM_SAMPLES: usize = 10;
+pub const TOF_PITCH_LOWER_BOUND_DEG: f32 = -10.0;
+pub const TOF_PITCH_UPPER_BOUND_DEG: f32 = 10.0;
 
-pub const MAX_TURNING_SPEED_DPS: f32 = 2400.0;
-pub const MAX_LINEAR_SPEED_DPS: f32 = 2400.0;
+pub const SMOOTH_ACCEL_NUM_SAMPLES: usize = 1;
+pub const STATE_TRANSITION_SAMPLES: usize = 5;
 
-pub const TURNING_SPEED_SLOPE: f32 = 5.0;
+pub const MAX_LINEAR_SPEED_DPS: f32 = 1600.0;
+pub const MAX_LINEAR_SPEED_IN_DROP_DPS: f32 = 1000.0;
 
-pub const DISTANCE_PID_KP: f32 = 4.5;
+pub const DISTANCE_PID_KP: f32 = 3.0;
 pub const DISTANCE_PID_KI: f32 = 0.0;
-pub const DISTANCE_PID_KD: f32 = 0.15;
+pub const DISTANCE_PID_KD: f32 = 0.3;
 pub const DISTANCE_PID_OUT_LIM: f32 = MAX_LINEAR_SPEED_DPS;
 pub const DISTANCE_PID_P_LIM: f32 = DISTANCE_PID_OUT_LIM;
 pub const DISTANCE_PID_I_LIM: f32 = DISTANCE_PID_OUT_LIM;
 pub const DISTANCE_PID_D_LIM: f32 = DISTANCE_PID_OUT_LIM;
 
-pub const SIDE_DIST_COMPENSATION_PID_KP: f32 = 0.005;
+pub const SIDE_DIST_COMPENSATION_PID_KP: f32 = 0.001;
 pub const SIDE_DIST_COMPENSATION_PID_KI: f32 = 0.0;
 pub const SIDE_DIST_COMPENSATION_PID_KD: f32 = 0.0;
 pub const SIDE_DIST_COMPENSATION_PID_OUT_LIM: f32 = 1.0;
 pub const SIDE_DIST_COMPENSATION_PID_P_LIM: f32 = SIDE_DIST_COMPENSATION_PID_OUT_LIM;
 pub const SIDE_DIST_COMPENSATION_PID_I_LIM: f32 = SIDE_DIST_COMPENSATION_PID_OUT_LIM;
 pub const SIDE_DIST_COMPENSATION_PID_D_LIM: f32 = SIDE_DIST_COMPENSATION_PID_OUT_LIM;
+
+// constants for turning profile function
+pub const MAX_TURNING_SPEED_DPS: f32 = 400.0;
+pub const TURNING_SPEED_SLOPE: f32 = 3.9;
+pub const YAW_TOLERANCE_DEG: f32 = 4.0;
+
+// constants for turning pid
+// pub const MAX_TURNING_SPEED_DPS: f32 = 400.0;
+// pub const MIN_TURNING_SPEED_DPS: f32 = 25.0;
+// pub const YAW_TOLERANCE_DEG: f32 = 3.0;
+pub const TURNING_PID_KP: f32 = 7.0;
+pub const TURNING_PID_KI: f32 = 0.0; // leave at 0 (artifical speed cap)
+pub const TURNING_PID_KD: f32 = 0.75;
+pub const TURNING_PID_OUT_LIM: f32 = MAX_TURNING_SPEED_DPS;
+pub const TURNING_PID_P_LIM: f32 = TURNING_PID_OUT_LIM;
+pub const TURNING_PID_I_LIM: f32 = TURNING_PID_OUT_LIM;
+pub const TURNING_PID_D_LIM: f32 = TURNING_PID_OUT_LIM;

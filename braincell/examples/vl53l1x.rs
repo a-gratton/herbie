@@ -54,7 +54,7 @@ mod app {
             ctx.device.I2C2,
             (scl2, sda2),
             i2cMode::Standard {
-                frequency: 100.kHz(),
+                frequency: 200.kHz(),
             },
             &clocks,
         );
@@ -62,7 +62,7 @@ mod app {
             ctx.device.I2C3,
             (scl3, sda3),
             i2cMode::Standard {
-                frequency: 100.kHz(),
+                frequency: 200.kHz(),
             },
             &clocks,
         );

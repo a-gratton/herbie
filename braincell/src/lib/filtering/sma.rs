@@ -34,7 +34,7 @@ where
 
     pub fn filtered(&self) -> Option<ItemT> {
         match self.full {
-            true => Some(self.sum / ItemT::from(SIZE).unwrap_or(ItemT::one())),
+            true => Some(self.sum / ItemT::from(SIZE).unwrap()),
             false => None,
         }
     }

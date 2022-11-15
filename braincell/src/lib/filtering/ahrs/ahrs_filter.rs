@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 pub struct ImuData {
     pub accel: (f32, f32, f32), // (ax, ay, az)
     pub gyro: (f32, f32, f32),  // (gx, gy, gz)

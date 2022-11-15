@@ -10,7 +10,7 @@ const DEG_TO_RAD: f32 = PI / 180.0;
 pub struct ImuFilter<const SIZE: usize, FilterType: AHRSFilter> {
     accel_x: sma::SmaFilter<f32, SIZE>,
     accel_y: sma::SmaFilter<f32, SIZE>,
-    accel_z: sma::SmaFilter<f32, SIZE>,
+    pub accel_z: sma::SmaFilter<f32, SIZE>,
     gyro_x: sma::SmaFilter<f32, SIZE>,
     gyro_y: sma::SmaFilter<f32, SIZE>,
     gyro_z: sma::SmaFilter<f32, SIZE>,
@@ -75,7 +75,7 @@ impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
     }
 
     // returns (roll, pitch, yaw) in degrees
-    pub fn filtered(&self) -> Option<(f32, f32, f32)> {
+    pub fn filtered(&mut self) -> Option<(f32, f32, f32)> {
         match self.accel_x.filtered() {
             Some(_) => Some(self.ahrs_filter.get_euler_angles()),
             None => None,
@@ -112,8 +112,13 @@ pub fn filter_data(mut cx: filter_data::Context) {
         }
     }
     if matches!(cx.local.tof_front.clear_interrupt(cx.local.i2c2), Err(_)) {
+        if matches!(cx.local.tof_front.software_reset(cx.local.i2c2), Err(_)) {
+            cx.shared.tx.lock(|tx| {
+                writeln!(tx, "tof front software reset failed\r").unwrap();
+            });
+        }
         cx.shared.tx.lock(|tx| {
-            writeln!(tx, "tof clear interrupt failed\r").unwrap();
+            writeln!(tx, "tof front clear interrupt failed\r").unwrap();
         });
     }
 
@@ -135,8 +140,13 @@ pub fn filter_data(mut cx: filter_data::Context) {
         }
     }
     if matches!(cx.local.tof_left.clear_interrupt(cx.local.i2c3), Err(_)) {
+        if matches!(cx.local.tof_left.software_reset(cx.local.i2c3), Err(_)) {
+            cx.shared.tx.lock(|tx| {
+                writeln!(tx, "tof left software reset failed\r").unwrap();
+            });
+        }
         cx.shared.tx.lock(|tx| {
-            writeln!(tx, "tof clear interrupt failed\r").unwrap();
+            writeln!(tx, "tof left clear interrupt failed\r").unwrap();
         });
     }
 
