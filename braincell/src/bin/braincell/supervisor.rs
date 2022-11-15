@@ -1,5 +1,4 @@
 use crate::app::supervisor_task;
-use crate::config::tuning::{PITCH_LOWER_BOUND_DEG, PITCH_UPPER_BOUND_DEG};
 use crate::config::{sys_config, tuning};
 use cortex_m::asm;
 use embedded_hal::digital::v2::InputPin;
@@ -18,6 +17,7 @@ pub struct Data<P: InputPin, FloatT: FloatCore> {
     side_dist_compensation_pid: pid::Pid<FloatT>,
     prev_front_distance: i32,
     in_drop: bool,
+    max_base_speed: f32,
 }
 impl<P, FloatT> Data<P, FloatT>
 where
@@ -34,6 +34,7 @@ where
             side_dist_compensation_pid: side_dist_comp_pid,
             prev_front_distance: sys_config::MAX_TOF_DISTANCE_MM,
             in_drop: false,
+            max_base_speed: tuning::MAX_LINEAR_SPEED_DPS,
         }
     }
 }
@@ -110,26 +111,31 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         .imu_filter
         .lock(|imu_filter| (pitch, roll, yaw) = imu_filter.filtered().unwrap_or((0.0, 0.0, 0.0))); // IMU is mounted sideways -> swap pitch and roll
 
-    let mut max_base_speed: f32 = tuning::MAX_LINEAR_SPEED_DPS;
     // if Herbie is tilted in pitch, take "distance" to be previous measured distance when Herbie was level with the ground
     if !within_range(
         pitch,
-        tuning::PITCH_LOWER_BOUND_DEG,
-        tuning::PITCH_UPPER_BOUND_DEG,
+        tuning::TOF_PITCH_LOWER_BOUND_DEG,
+        tuning::TOF_PITCH_UPPER_BOUND_DEG,
     ) {
         front_distance = cx.local.supervisor_state.prev_front_distance;
-    } else if !cx.local.supervisor_state.in_drop {
+    }
+    if within_range(
+        pitch,
+        tuning::DETECTION_PITCH_LOWER_BOUND_DEG,
+        tuning::DETECTION_PITCH_UPPER_BOUND_DEG,
+    ) && !cx.local.supervisor_state.in_drop
+    {
         // we are level and not in the drop trap, set speed to max
-        max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
+        cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
     }
 
     // detect entering the drop trap, set lower speed max
-    if !cx.local.supervisor_state.in_drop && pitch < PITCH_LOWER_BOUND_DEG {
+    if !cx.local.supervisor_state.in_drop && pitch < tuning::DETECTION_PITCH_LOWER_BOUND_DEG {
         cx.local.supervisor_state.in_drop = true;
-        max_base_speed = tuning::MAX_LINEAR_SPEED_IN_DROP_DPS;
+        cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_IN_DROP_DPS;
     }
     // detect leaving the drop trap, speed will be reset once we level out
-    if cx.local.supervisor_state.in_drop && pitch > PITCH_UPPER_BOUND_DEG {
+    if cx.local.supervisor_state.in_drop && pitch > tuning::DETECTION_PITCH_UPPER_BOUND_DEG {
         cx.local.supervisor_state.in_drop = false;
     }
 
@@ -173,8 +179,8 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             ) < tuning::DISTANCE_TOLERANCE_MM as f32
                 && within_range(
                     pitch,
-                    tuning::PITCH_LOWER_BOUND_DEG,
-                    tuning::PITCH_UPPER_BOUND_DEG,
+                    tuning::TOF_PITCH_LOWER_BOUND_DEG,
+                    tuning::TOF_PITCH_UPPER_BOUND_DEG,
                 )
             {
                 cx.local.supervisor_state.num_samples_within_tolerance += 1;
@@ -195,7 +201,14 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     left_distance,
                     sys_config::LEFT_DISTANCE_TARGETS_MM[cx.local.supervisor_state.curr_leg],
                 );
-                cx.local.supervisor_state.distance_pid.output_limit = max_base_speed;
+                cx.local.supervisor_state.distance_pid.output_limit =
+                    cx.local.supervisor_state.max_base_speed;
+                cx.local.supervisor_state.distance_pid.p_limit =
+                    cx.local.supervisor_state.max_base_speed;
+                cx.local.supervisor_state.distance_pid.i_limit =
+                    cx.local.supervisor_state.max_base_speed;
+                cx.local.supervisor_state.distance_pid.d_limit =
+                    cx.local.supervisor_state.max_base_speed;
                 let base_speed = cx
                     .local
                     .supervisor_state

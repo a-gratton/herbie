@@ -363,7 +363,7 @@ mod app {
     #[task(local=[led], shared=[tx], priority=1)]
     fn blinky(mut cx: blinky::Context) {
         cx.local.led.toggle();
-        cx.shared.tx.lock(|tx| writeln!(tx, "blink\r").unwrap());
+        // cx.shared.tx.lock(|tx| writeln!(tx, "blink\r").unwrap());
         blinky::spawn_after(Duration::<u64, 1, 1000>::millis(1000)).unwrap();
     }
 
