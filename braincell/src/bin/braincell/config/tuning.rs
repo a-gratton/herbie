@@ -10,26 +10,38 @@ pub const IMU_SMA_FILTER_SIZE: usize = 5;
 pub const TOF_FRONT_SMA_FILTER_SIZE: usize = 3;
 pub const TOF_LEFT_SMA_FILTER_SIZE: usize = 1;
 
+pub const IMU_ROLL_EMA_ALPHA: f32 = 0.05;
+pub const IMU_PITCH_EMA_ALPHA: f32 = 1.0;
+pub const IMU_YAW_EMA_ALPHA: f32 = 1.0;
+
+pub const IMU_ROLL_FILTER_KP: f32 = 40.0;
+pub const IMU_ROLL_FILTER_KI: f32 = 0.1;
+pub const IMU_ROLL_FILTER_USE_MAG: bool = false;
+
+pub const IMU_YAW_FILTER_KP: f32 = 0.0;
+pub const IMU_YAW_FILTER_KI: f32 = 0.0;
+pub const IMU_YAW_FILTER_USE_MAG: bool = false;
+
 pub const IMU_GYRO_BIAS_DPS: (f32, f32, f32) = (0.26560888, 0.29839727, 0.335);
-pub const IMU_USE_MAG: bool = false;
 
 pub const DISTANCE_TOLERANCE_MM: i32 = 30;
-pub const YAW_TOLERANCE_DEG: f32 = 4.5;
 
 pub const DETECTION_PITCH_LOWER_BOUND_DEG: f32 = -6.0;
-pub const DETECTION_PITCH_UPPER_BOUND_DEG: f32 = 6.0;
+pub const DETECTION_PITCH_UPPER_BOUND_DEG: f32 = 4.0;
 pub const TOF_PITCH_LOWER_BOUND_DEG: f32 = -12.0;
 pub const TOF_PITCH_UPPER_BOUND_DEG: f32 = 20.0;
 
 pub const STEADY_STATE_NUM_SAMPLES: usize = 1;
-pub const MAX_TURNING_SPEED_DPS: f32 = 2400.0;
 
 pub const MAX_LINEAR_SPEED_DPS: f32 = 1500.0;
 pub const MAX_LINEAR_SPEED_IN_DROP_DPS: f32 = 800.0;
 
-pub const TURNING_SPEED_SLOPE: f32 = 4.5;
+pub const MAX_TURNING_SPEED_DPS: f32 = 2400.0;
+pub const TURNING_SPEED_SLOPE: f32 = 4.2;
+pub const YAW_TOLERANCE_DEG: f32 = 4.5;
+pub const TURNING_YAW_TARGET_DEG: f32 = 87.0;
 
-pub const DISTANCE_PID_KP: f32 = 3.5;
+pub const DISTANCE_PID_KP: f32 = 3.0;
 pub const DISTANCE_PID_KI: f32 = 0.0;
 pub const DISTANCE_PID_KD: f32 = 0.3;
 pub const DISTANCE_PID_OUT_LIM: f32 = MAX_LINEAR_SPEED_DPS;
@@ -37,7 +49,7 @@ pub const DISTANCE_PID_P_LIM: f32 = DISTANCE_PID_OUT_LIM;
 pub const DISTANCE_PID_I_LIM: f32 = DISTANCE_PID_OUT_LIM;
 pub const DISTANCE_PID_D_LIM: f32 = DISTANCE_PID_OUT_LIM;
 
-pub const SIDE_DIST_COMPENSATION_PID_KP: f32 = 0.003;
+pub const SIDE_DIST_COMPENSATION_PID_KP: f32 = 0.001;
 pub const SIDE_DIST_COMPENSATION_PID_KI: f32 = 0.0;
 pub const SIDE_DIST_COMPENSATION_PID_KD: f32 = 0.0;
 pub const SIDE_DIST_COMPENSATION_PID_OUT_LIM: f32 = 1.0;

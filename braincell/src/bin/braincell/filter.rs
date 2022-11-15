@@ -1,6 +1,8 @@
 use crate::app::{filter_data, monotonics};
 use crate::config::sys_config;
-use braincell::filtering::{ahrs::ahrs_filter::AHRSFilter, ahrs::ahrs_filter::ImuData, sma};
+use braincell::filtering::{
+    ahrs::ahrs_filter::AHRSFilter, ahrs::ahrs_filter::ImuData, exponential, sma,
+};
 use core::{f32::consts::PI, fmt::Write};
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
@@ -17,13 +19,24 @@ pub struct ImuFilter<const SIZE: usize, FilterType: AHRSFilter> {
     mag_x: sma::SmaFilter<f32, SIZE>,
     mag_y: sma::SmaFilter<f32, SIZE>,
     mag_z: sma::SmaFilter<f32, SIZE>,
-    ahrs_filter: FilterType,
+    ahrs_filter_roll: FilterType,
+    ahrs_filter_yaw: FilterType,
     gyro_bias: (f32, f32, f32),
+    roll: exponential::ExponentialFilter<f32>,
+    pitch: exponential::ExponentialFilter<f32>,
+    yaw: exponential::ExponentialFilter<f32>,
 }
 
 impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
     // gyro bias of (x,y,z) axes in deg/s
-    pub fn new(ahrs_filter: FilterType, gyro_bias: (f32, f32, f32)) -> Self {
+    pub fn new(
+        ahrs_filter_roll: FilterType,
+        ahrs_filter_yaw: FilterType,
+        gyro_bias: (f32, f32, f32),
+        ema_roll_alpha: f32,
+        ema_pitch_alpha: f32,
+        ema_yaw_alpha: f32,
+    ) -> Self {
         Self {
             accel_x: sma::SmaFilter::<f32, SIZE>::new(),
             accel_y: sma::SmaFilter::<f32, SIZE>::new(),
@@ -34,8 +47,12 @@ impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
             mag_x: sma::SmaFilter::<f32, SIZE>::new(),
             mag_y: sma::SmaFilter::<f32, SIZE>::new(),
             mag_z: sma::SmaFilter::<f32, SIZE>::new(),
-            ahrs_filter: ahrs_filter,
+            ahrs_filter_roll: ahrs_filter_roll,
+            ahrs_filter_yaw: ahrs_filter_yaw,
             gyro_bias: gyro_bias,
+            roll: exponential::ExponentialFilter::<f32>::new(ema_roll_alpha),
+            pitch: exponential::ExponentialFilter::<f32>::new(ema_pitch_alpha),
+            yaw: exponential::ExponentialFilter::<f32>::new(ema_yaw_alpha),
         }
     }
 
@@ -51,39 +68,53 @@ impl<const SIZE: usize, FilterType: AHRSFilter> ImuFilter<SIZE, FilterType> {
         self.mag_z.insert(imu_data.mag.2);
 
         if let Some(_) = self.accel_x.filtered() {
-            self.ahrs_filter.update(
-                ImuData {
-                    accel: (
-                        self.accel_x.filtered().unwrap_or(1.0),
-                        self.accel_y.filtered().unwrap_or(1.0),
-                        self.accel_z.filtered().unwrap_or(1.0),
-                    ),
-                    gyro: (
-                        (self.gyro_x.filtered().unwrap_or(1.0) - self.gyro_bias.0) * DEG_TO_RAD,
-                        (self.gyro_y.filtered().unwrap_or(1.0) - self.gyro_bias.1) * DEG_TO_RAD,
-                        (self.gyro_z.filtered().unwrap_or(1.0) - self.gyro_bias.2) * DEG_TO_RAD,
-                    ),
-                    mag: (
-                        self.mag_x.filtered().unwrap_or(1.0),
-                        self.mag_y.filtered().unwrap_or(1.0),
-                        self.mag_z.filtered().unwrap_or(1.0),
-                    ),
-                },
-                deltat,
+            let imu_data = ImuData {
+                accel: (
+                    self.accel_x.filtered().unwrap_or(1.0),
+                    -self.accel_y.filtered().unwrap_or(1.0),
+                    -self.accel_z.filtered().unwrap_or(1.0),
+                ),
+                gyro: (
+                    (self.gyro_x.filtered().unwrap_or(1.0) - self.gyro_bias.0) * DEG_TO_RAD,
+                    (self.gyro_y.filtered().unwrap_or(1.0) - self.gyro_bias.1) * DEG_TO_RAD,
+                    (self.gyro_z.filtered().unwrap_or(1.0) - self.gyro_bias.2) * DEG_TO_RAD,
+                ),
+                mag: (
+                    self.mag_x.filtered().unwrap_or(1.0),
+                    self.mag_y.filtered().unwrap_or(1.0),
+                    self.mag_z.filtered().unwrap_or(1.0),
+                ),
+            };
+            self.ahrs_filter_roll.update(
+                imu_data,
+                deltat
+            );
+            self.ahrs_filter_yaw.update(
+                imu_data,
+                deltat
             );
         }
     }
 
     // returns (roll, pitch, yaw) in degrees
-    pub fn filtered(&self) -> Option<(f32, f32, f32)> {
+    pub fn filtered(&mut self) -> Option<(f32, f32, f32)> {
         match self.accel_x.filtered() {
-            Some(_) => Some(self.ahrs_filter.get_euler_angles()),
+            Some(_) => {
+                let (roll, pitch, _) = self.ahrs_filter_roll.get_euler_angles();
+                let (_, _, yaw) = self.ahrs_filter_yaw.get_euler_angles();
+                Some((
+                    self.roll.update(roll),
+                    self.pitch.update(pitch),
+                    self.yaw.update(yaw),
+                ))
+            }
             None => None,
         }
     }
 
     pub fn reset(&mut self) {
-        self.ahrs_filter.reset();
+        self.ahrs_filter_roll.reset();
+        self.ahrs_filter_yaw.reset();
     }
 }
 

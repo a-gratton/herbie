@@ -209,12 +209,12 @@ mod app {
         let tof_left_filter = sma::SmaFilter::<i32, { tuning::TOF_LEFT_SMA_FILTER_SIZE }>::new();
         let imu_filter =
             filter::ImuFilter::<{ tuning::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
-                mahony::MahonyFilter::new(
-                    mahony::DEFAULT_KP,
-                    mahony::DEFAULT_KI,
-                    tuning::IMU_USE_MAG,
-                ),
+                mahony::MahonyFilter::new(tuning::IMU_ROLL_FILTER_KP, tuning::IMU_ROLL_FILTER_KI, tuning::IMU_ROLL_FILTER_USE_MAG),
+                mahony::MahonyFilter::new(tuning::IMU_YAW_FILTER_KP, tuning::IMU_YAW_FILTER_KI, tuning::IMU_YAW_FILTER_USE_MAG),
                 tuning::IMU_GYRO_BIAS_DPS,
+                tuning::IMU_ROLL_EMA_ALPHA,
+                tuning::IMU_PITCH_EMA_ALPHA,
+                tuning::IMU_YAW_EMA_ALPHA,
             );
 
         //set up PWM
@@ -361,7 +361,7 @@ mod app {
     }
 
     #[task(local=[led], shared=[tx], priority=1)]
-    fn blinky(mut cx: blinky::Context) {
+    fn blinky(cx: blinky::Context) {
         cx.local.led.toggle();
         // cx.shared.tx.lock(|tx| writeln!(tx, "blink\r").unwrap());
         blinky::spawn_after(Duration::<u64, 1, 1000>::millis(1000)).unwrap();

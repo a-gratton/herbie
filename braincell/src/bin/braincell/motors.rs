@@ -18,4 +18,4 @@ pub fn speed_control(mut cx: speed_control::Context) {
     cx.local.motors.step(&vels);
     // run at 1 kHz
     speed_control::spawn_after(Duration::<u64, 1, 1000>::millis(1)).unwrap();
-} 
+}
