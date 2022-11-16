@@ -213,20 +213,25 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     left_distance,
                     sys_config::LEFT_DISTANCE_TARGETS_MM[cx.local.supervisor_state.curr_leg],
                 );
-                cx.local.supervisor_state.distance_pid.output_limit =
-                    cx.local.supervisor_state.max_base_speed;
-                cx.local.supervisor_state.distance_pid.p_limit =
-                    cx.local.supervisor_state.max_base_speed;
-                cx.local.supervisor_state.distance_pid.i_limit =
-                    cx.local.supervisor_state.max_base_speed;
-                cx.local.supervisor_state.distance_pid.d_limit =
-                    cx.local.supervisor_state.max_base_speed;
-                let base_speed = cx
-                    .local
-                    .supervisor_state
-                    .distance_pid
-                    .next_control_output(front_distance as f32)
-                    .output;
+                // cx.local.supervisor_state.distance_pid.output_limit =
+                //     cx.local.supervisor_state.max_base_speed;
+                // cx.local.supervisor_state.distance_pid.p_limit =
+                //     cx.local.supervisor_state.max_base_speed;
+                // cx.local.supervisor_state.distance_pid.i_limit =
+                //     cx.local.supervisor_state.max_base_speed;
+                // cx.local.supervisor_state.distance_pid.d_limit =
+                //     cx.local.supervisor_state.max_base_speed;
+                let base_speed = 
+                    if cx.local.supervisor_state.in_drop {
+                        cx.local.supervisor_state.max_base_speed
+                    } else {
+                        cx
+                        .local
+                        .supervisor_state
+                        .distance_pid
+                        .next_control_output(front_distance as f32)
+                        .output
+                    };
                 let dist_comp_alpha: f32 = cx
                     .local
                     .supervisor_state
