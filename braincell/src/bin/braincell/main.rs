@@ -209,12 +209,12 @@ mod app {
         let tof_left_filter = sma::SmaFilter::<i32, { tuning::TOF_LEFT_SMA_FILTER_SIZE }>::new();
         let imu_filter =
             filter::ImuFilter::<{ tuning::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
-                mahony::MahonyFilter::new(tuning::IMU_ROLL_FILTER_KP, tuning::IMU_ROLL_FILTER_KI, tuning::IMU_ROLL_FILTER_USE_MAG),
-                mahony::MahonyFilter::new(tuning::IMU_YAW_FILTER_KP, tuning::IMU_YAW_FILTER_KI, tuning::IMU_YAW_FILTER_USE_MAG),
+                mahony::MahonyFilter::new(
+                    tuning::IMU_FILTER_KP,
+                    tuning::IMU_FILTER_KI,
+                    tuning::IMU_FILTER_USE_MAG,
+                ),
                 tuning::IMU_GYRO_BIAS_DPS,
-                tuning::IMU_ROLL_EMA_ALPHA,
-                tuning::IMU_PITCH_EMA_ALPHA,
-                tuning::IMU_YAW_EMA_ALPHA,
             );
 
         //set up PWM

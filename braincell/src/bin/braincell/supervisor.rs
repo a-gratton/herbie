@@ -1,6 +1,5 @@
 use crate::app::supervisor_task;
 use crate::config::{sys_config, tuning};
-use core::fmt::Write;
 use cortex_m::asm;
 use embedded_hal::digital::v2::InputPin;
 use libm::{fabsf, fminf};
@@ -266,18 +265,18 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 // asm::delay(4_000_000);
                 cx.local.supervisor_state.num_samples_within_tolerance = 0;
                 cx.local
-                .supervisor_state
-                .side_dist_compensation_pid
-                .reset_integral_term();
+                    .supervisor_state
+                    .side_dist_compensation_pid
+                    .reset_integral_term();
                 cx.local.supervisor_state.distance_pid.reset_integral_term();
                 cx.local.supervisor_state.distance_pid.setpoint =
                     sys_config::FRONT_DISTANCE_TARGETS_MM[cx.local.supervisor_state.curr_leg]
-                    as f32;
+                        as f32;
                 cx.shared
                     .tof_front_filter
                     .lock(|tof_front_filter| tof_front_filter.reset());
-                    cx.shared.imu_filter.lock(|imu_filter| imu_filter.reset());
-                    cx.local.supervisor_state.state = State::Linear;
+                cx.shared.imu_filter.lock(|imu_filter| imu_filter.reset());
+                cx.local.supervisor_state.state = State::Linear;
             } else {
                 // compute right and left side speed set points
                 let base_speed = turning_speed_profile(yaw_error);

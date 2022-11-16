@@ -10,17 +10,9 @@ pub const IMU_SMA_FILTER_SIZE: usize = 5;
 pub const TOF_FRONT_SMA_FILTER_SIZE: usize = 3;
 pub const TOF_LEFT_SMA_FILTER_SIZE: usize = 1;
 
-pub const IMU_ROLL_EMA_ALPHA: f32 = 0.05;
-pub const IMU_PITCH_EMA_ALPHA: f32 = 1.0;
-pub const IMU_YAW_EMA_ALPHA: f32 = 1.0;
-
-pub const IMU_ROLL_FILTER_KP: f32 = 40.0;
-pub const IMU_ROLL_FILTER_KI: f32 = 0.1;
-pub const IMU_ROLL_FILTER_USE_MAG: bool = false;
-
-pub const IMU_YAW_FILTER_KP: f32 = 0.0;
-pub const IMU_YAW_FILTER_KI: f32 = 0.0;
-pub const IMU_YAW_FILTER_USE_MAG: bool = false;
+pub const IMU_FILTER_KP: f32 = 0.0;
+pub const IMU_FILTER_KI: f32 = 0.0;
+pub const IMU_FILTER_USE_MAG: bool = false;
 
 pub const IMU_GYRO_BIAS_DPS: (f32, f32, f32) = (0.26560888, 0.29839727, 0.335);
 
