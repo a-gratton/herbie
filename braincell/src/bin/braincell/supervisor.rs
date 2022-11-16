@@ -112,9 +112,9 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         .imu_filter
         .lock(|imu_filter| (pitch, roll, yaw) = imu_filter.filtered().unwrap_or((0.0, 0.0, 0.0))); // IMU is mounted sideways -> swap pitch and roll
 
-    cx.shared
-        .tx
-        .lock(|tx| writeln!(tx, "pitch {pitch} yaw {yaw}"));
+    // cx.shared
+    //     .tx
+    //     .lock(|tx| writeln!(tx, "pitch {pitch} yaw {yaw}"));
 
     // if Herbie is tilted in pitch, take "distance" to be previous measured distance when Herbie was level with the ground
     if !within_range(
@@ -158,7 +158,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 while cx.local.supervisor_state.button.is_low() {
                     asm::nop();
                 }
-                asm::delay(1_000_000);
+                asm::delay(4_000_000);
                 cx.local.supervisor_state.curr_leg = 0;
                 cx.local.supervisor_state.state = State::Linear;
                 cx.local
@@ -197,15 +197,15 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 } else if cx.local.supervisor_state.num_samples_within_tolerance
                     >= tuning::STEADY_STATE_NUM_SAMPLES
                 {
-                    cx.local.supervisor_state.curr_leg += 1;
-                    cx.local.supervisor_state.state = State::Turning;
                     cx.shared.motor_setpoints.lock(|motor_setpoints| {
                         motor_setpoints.f_right = 0.0;
                         motor_setpoints.r_right = 0.0;
                         motor_setpoints.f_left = 0.0;
                         motor_setpoints.r_left = 0.0;
                     });
-                    asm::delay(4_000_000);
+                    cx.local.supervisor_state.curr_leg += 1;
+                    cx.local.supervisor_state.state = State::Turning;
+                    // asm::delay(4_000_000);
                 }
             } else {
                 cx.local.supervisor_state.num_samples_within_tolerance = 0;
@@ -257,27 +257,27 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             // check if yaw set point is reached
             let yaw_error: f32 = compute_yaw_error(yaw, tuning::TURNING_YAW_TARGET_DEG);
             if fabsf(yaw_error) < tuning::YAW_TOLERANCE_DEG {
-                cx.local.supervisor_state.state = State::Linear;
                 cx.shared.motor_setpoints.lock(|motor_setpoints| {
                     motor_setpoints.f_right = 0.0;
                     motor_setpoints.r_right = 0.0;
                     motor_setpoints.f_left = 0.0;
                     motor_setpoints.r_left = 0.0;
                 });
-                asm::delay(1_000_000);
+                // asm::delay(4_000_000);
                 cx.local.supervisor_state.num_samples_within_tolerance = 0;
                 cx.local
-                    .supervisor_state
-                    .side_dist_compensation_pid
-                    .reset_integral_term();
+                .supervisor_state
+                .side_dist_compensation_pid
+                .reset_integral_term();
                 cx.local.supervisor_state.distance_pid.reset_integral_term();
                 cx.local.supervisor_state.distance_pid.setpoint =
                     sys_config::FRONT_DISTANCE_TARGETS_MM[cx.local.supervisor_state.curr_leg]
-                        as f32;
+                    as f32;
                 cx.shared
                     .tof_front_filter
                     .lock(|tof_front_filter| tof_front_filter.reset());
-                // cx.shared.imu_filter.lock(|imu_filter| imu_filter.reset());
+                    cx.shared.imu_filter.lock(|imu_filter| imu_filter.reset());
+                    cx.local.supervisor_state.state = State::Linear;
             } else {
                 // compute right and left side speed set points
                 let base_speed = turning_speed_profile(yaw_error);
