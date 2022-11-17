@@ -11,28 +11,39 @@ pub const MOTOR_DIRECTIONS: MotorDirections = MotorDirections {
     r_right: Direction::Forward,
 };
 
-pub const NUM_LEGS_IN_RACE: usize = 7;
+pub const NUM_LEGS_IN_RACE: usize = 11;
+
+pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
+    [120, 120, 120, 420, 420, 420, 450, 750, 750, 750, 750];
+pub const FRONT_STARTING_DISTANCES_MM: [i32; NUM_LEGS_IN_RACE] = [
+    1200, 1500, 1500, 1500, 1500, 1200, 1200, 1200, 1200, 900, 900,
+];
+pub const LEFT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
+    [95, 95, 95, 95, 395, 395, 425, 425, 725, 725, 725];
+pub const TURNING_YAW_TARGETS_DEG: [f32; NUM_LEGS_IN_RACE] = [
+    90.0, 90.0, 90.0, 90.0, 93.0, 94.0, 95.0, 95.0, 95.0, 95.0, 95.0,
+];
 
 // pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-//     [120, 120, 120, 400, 400, 400, 400, 700, 700, 700, 700];
+//     [120, 120, 120, 420];
+// pub const FRONT_STARTING_DISTANCES_MM: [i32; NUM_LEGS_IN_RACE] =
+//     [1200, 1500, 1500, 1500];
 // pub const LEFT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-//     [95, 95, 95, 95, 395, 395, 395, 395, 695, 695, 695];
+//     [95, 95, 95, 95];
 
 // pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-//     [130, 130, 130, 430];
+//     [420, 420, 450, 750, 750, 750, 750];
+// pub const FRONT_STARTING_DISTANCES_MM: [i32; NUM_LEGS_IN_RACE] =
+//     [1500, 1200, 1200, 1200, 1200, 900, 900];
 // pub const LEFT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-//     [90, 90, 90, 90];
+//     [395, 395, 395, 395, 695, 695, 695];
 
 // pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-//     [130, 130, 130, 430, 430, 430, 430, 730, 730, 730, 730];
+//     [120, 120];
+// pub const FRONT_STARTING_DISTANCES_MM: [i32; NUM_LEGS_IN_RACE] =
+//     [1200, 1500];
 // pub const LEFT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-//     [90, 90, 90, 90, 390, 390, 390, 390, 690, 690, 690];
-
-pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] = [400, 400, 400, 700, 700, 700, 700];
-pub const LEFT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] = [395, 395, 395, 395, 695, 695, 695];
-
-// pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] = [120, 120, 120];
-// pub const LEFT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] = [95, 95, 95];
+//     [95, 95];
 
 pub const MIN_TOF_DISTANCE_MM: i32 = 40;
 pub const MAX_TOF_DISTANCE_MM: i32 = 1800;

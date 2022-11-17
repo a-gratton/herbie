@@ -12,7 +12,8 @@ pub struct Data<P: InputPin, FloatT: FloatCore> {
     button: P,
     state: State,
     curr_leg: usize,
-    num_samples_within_tolerance: usize,
+    smooth_accel_samples: usize,
+    detection_samples_within_tolerance: usize,
     distance_pid: pid::Pid<FloatT>,
     side_dist_compensation_pid: pid::Pid<FloatT>,
     prev_front_distance: i32,
@@ -29,7 +30,8 @@ where
             button: button,
             state: State::Idle,
             curr_leg: 0,
-            num_samples_within_tolerance: 0,
+            smooth_accel_samples: 0,
+            detection_samples_within_tolerance: 0,
             distance_pid: distance_pid,
             side_dist_compensation_pid: side_dist_comp_pid,
             prev_front_distance: sys_config::MAX_TOF_DISTANCE_MM,
@@ -129,8 +131,15 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         tuning::DETECTION_PITCH_UPPER_BOUND_DEG,
     ) && !cx.local.supervisor_state.in_drop
     {
-        // we are level and not in the drop trap, set speed to max
-        cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
+        cx.local.supervisor_state.detection_samples_within_tolerance += 1;
+
+        if cx.local.supervisor_state.detection_samples_within_tolerance
+            == tuning::DETECTION_NUM_SAMPLES
+        {
+            // we are level and not in the drop trap, set speed to max
+            cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
+            cx.local.supervisor_state.detection_samples_within_tolerance = 0;
+        }
     }
 
     // detect entering the drop trap, set lower speed max
@@ -170,6 +179,9 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 cx.shared
                     .tof_front_filter
                     .lock(|tof_front_filter| tof_front_filter.reset());
+                cx.shared
+                    .tof_left_filter
+                    .lock(|tof_left_filter| tof_left_filter.reset());
                 cx.shared.imu_filter.lock(|imu_filter| imu_filter.reset());
             }
         }
@@ -188,14 +200,11 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     tuning::TOF_PITCH_UPPER_BOUND_DEG,
                 )
             {
-                cx.local.supervisor_state.num_samples_within_tolerance += 1;
                 if cx.local.supervisor_state.curr_leg == sys_config::NUM_LEGS_IN_RACE - 1 {
                     // race is complete
                     cx.local.supervisor_state.curr_leg = 0;
                     cx.local.supervisor_state.state = State::Idle;
-                } else if cx.local.supervisor_state.num_samples_within_tolerance
-                    >= tuning::STEADY_STATE_NUM_SAMPLES
-                {
+                } else {
                     cx.shared.motor_setpoints.lock(|motor_setpoints| {
                         motor_setpoints.f_right = 0.0;
                         motor_setpoints.r_right = 0.0;
@@ -204,34 +213,37 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     });
                     cx.local.supervisor_state.curr_leg += 1;
                     cx.local.supervisor_state.state = State::Turning;
-                    // asm::delay(4_000_000);
+                    asm::delay(100_000);
                 }
             } else {
-                cx.local.supervisor_state.num_samples_within_tolerance = 0;
+                cx.local.supervisor_state.smooth_accel_samples += 1;
                 // compute right and left side speed set points
                 let left_dist_error: i32 = compute_dist_error(
                     left_distance,
                     sys_config::LEFT_DISTANCE_TARGETS_MM[cx.local.supervisor_state.curr_leg],
                 );
-                // cx.local.supervisor_state.distance_pid.output_limit =
-                //     cx.local.supervisor_state.max_base_speed;
-                // cx.local.supervisor_state.distance_pid.p_limit =
-                //     cx.local.supervisor_state.max_base_speed;
-                // cx.local.supervisor_state.distance_pid.i_limit =
-                //     cx.local.supervisor_state.max_base_speed;
-                // cx.local.supervisor_state.distance_pid.d_limit =
-                //     cx.local.supervisor_state.max_base_speed;
-                let base_speed = 
-                    if cx.local.supervisor_state.in_drop {
-                        cx.local.supervisor_state.max_base_speed
-                    } else {
-                        cx
-                        .local
+                cx.local.supervisor_state.distance_pid.output_limit =
+                    cx.local.supervisor_state.max_base_speed;
+                cx.local.supervisor_state.distance_pid.p_limit =
+                    cx.local.supervisor_state.max_base_speed;
+                cx.local.supervisor_state.distance_pid.i_limit =
+                    cx.local.supervisor_state.max_base_speed;
+                cx.local.supervisor_state.distance_pid.d_limit =
+                    cx.local.supervisor_state.max_base_speed;
+                let base_speed = if cx.local.supervisor_state.in_drop {
+                    -cx.local.supervisor_state.max_base_speed
+                } else {
+                    cx.local
                         .supervisor_state
                         .distance_pid
                         .next_control_output(front_distance as f32)
                         .output
-                    };
+                };
+                if cx.local.supervisor_state.smooth_accel_samples
+                    == tuning::SMOOTH_ACCEL_NUM_SAMPLES
+                {
+                    cx.local.supervisor_state.distance_pid.reset_integral_term();
+                }
                 let dist_comp_alpha: f32 = cx
                     .local
                     .supervisor_state
@@ -239,12 +251,23 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     .next_control_output(fabsf(left_dist_error as f32))
                     .output;
                 let (right_side_speed, left_side_speed): (f32, f32) = {
+                    let left_accel_comp = fminf(
+                        cx.local.supervisor_state.smooth_accel_samples as f32
+                            / tuning::SMOOTH_ACCEL_NUM_SAMPLES as f32,
+                        1.0,
+                    );
                     if left_dist_error < 0 {
                         // too far from wall, move left
-                        (base_speed, base_speed * (1.0 - dist_comp_alpha))
+                        (
+                            base_speed,
+                            base_speed * (1.0 - dist_comp_alpha) * left_accel_comp,
+                        )
                     } else {
                         // too close to wall, move right
-                        (base_speed * (1.0 - dist_comp_alpha), base_speed)
+                        (
+                            base_speed * (1.0 - dist_comp_alpha),
+                            base_speed * left_accel_comp,
+                        )
                     }
                 };
                 // set motor set points
@@ -259,7 +282,10 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         State::Turning => {
             block_if_button_pressed(&cx.local.supervisor_state.button);
             // check if yaw set point is reached
-            let yaw_error: f32 = compute_yaw_error(yaw, tuning::TURNING_YAW_TARGET_DEG);
+            let yaw_error: f32 = compute_yaw_error(
+                yaw,
+                sys_config::TURNING_YAW_TARGETS_DEG[cx.local.supervisor_state.curr_leg],
+            );
             if fabsf(yaw_error) < tuning::YAW_TOLERANCE_DEG {
                 cx.shared.motor_setpoints.lock(|motor_setpoints| {
                     motor_setpoints.f_right = 0.0;
@@ -267,8 +293,8 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     motor_setpoints.f_left = 0.0;
                     motor_setpoints.r_left = 0.0;
                 });
-                // asm::delay(4_000_000);
-                cx.local.supervisor_state.num_samples_within_tolerance = 0;
+                asm::delay(100_000);
+                cx.local.supervisor_state.smooth_accel_samples = 0;
                 cx.local
                     .supervisor_state
                     .side_dist_compensation_pid
@@ -280,8 +306,16 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 cx.shared
                     .tof_front_filter
                     .lock(|tof_front_filter| tof_front_filter.reset());
+                cx.shared
+                    .tof_left_filter
+                    .lock(|tof_left_filter| tof_left_filter.reset());
                 cx.shared.imu_filter.lock(|imu_filter| imu_filter.reset());
                 cx.local.supervisor_state.state = State::Linear;
+                cx.local.supervisor_state.prev_front_distance =
+                    sys_config::FRONT_STARTING_DISTANCES_MM[cx.local.supervisor_state.curr_leg];
+                cx.local.supervisor_state.in_drop = false;
+                cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
+                cx.local.supervisor_state.detection_samples_within_tolerance = 0;
             } else {
                 // compute right and left side speed set points
                 let base_speed = turning_speed_profile(yaw_error);
