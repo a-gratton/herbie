@@ -24,7 +24,7 @@ pub const DETECTION_NUM_SAMPLES: usize = 10;
 pub const TOF_PITCH_LOWER_BOUND_DEG: f32 = -10.0;
 pub const TOF_PITCH_UPPER_BOUND_DEG: f32 = 10.0;
 
-pub const SMOOTH_ACCEL_NUM_SAMPLES: usize = 3;
+pub const SMOOTH_ACCEL_NUM_SAMPLES: usize = 1;
 
 pub const MAX_LINEAR_SPEED_DPS: f32 = 1600.0;
 pub const MAX_LINEAR_SPEED_IN_DROP_DPS: f32 = 800.0;
