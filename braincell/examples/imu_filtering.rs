@@ -23,7 +23,7 @@ mod app {
 
     const DEG_TO_RAD: f32 = PI / 180.0;
     const SMA_FILTER_SIZE: usize = 5;
-    const IMU_GYRO_BIAS: (f32, f32, f32) = (-0.259, 0.29839727, 0.378);
+    const IMU_GYRO_BIAS: (f32, f32, f32) = (-0.015826736, 0.20015818, 0.40443522);
 
     #[shared]
     struct Shared {

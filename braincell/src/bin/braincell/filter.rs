@@ -10,7 +10,7 @@ const DEG_TO_RAD: f32 = PI / 180.0;
 pub struct ImuFilter<const SIZE: usize, FilterType: AHRSFilter> {
     accel_x: sma::SmaFilter<f32, SIZE>,
     accel_y: sma::SmaFilter<f32, SIZE>,
-    accel_z: sma::SmaFilter<f32, SIZE>,
+    pub accel_z: sma::SmaFilter<f32, SIZE>,
     gyro_x: sma::SmaFilter<f32, SIZE>,
     gyro_y: sma::SmaFilter<f32, SIZE>,
     gyro_z: sma::SmaFilter<f32, SIZE>,

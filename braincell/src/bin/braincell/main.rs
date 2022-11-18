@@ -304,8 +304,18 @@ mod app {
             tuning::SIDE_DIST_COMPENSATION_PID_OUT_LIM,
             0.0,
         );
+        let turning_pid = pid::Pid::new(
+            tuning::TURNING_PID_KP,
+            tuning::TURNING_PID_KI,
+            tuning::TURNING_PID_KD,
+            tuning::TURNING_PID_P_LIM,
+            tuning::TURNING_PID_I_LIM,
+            tuning::TURNING_PID_D_LIM,
+            tuning::TURNING_PID_OUT_LIM,
+            0.0,
+        );
         let supervisor_state =
-            supervisor::Data::new(button, distance_pid, side_dist_compensation_pid);
+            supervisor::Data::new(button, distance_pid, side_dist_compensation_pid, turning_pid);
 
         writeln!(tx, "system initialized\r").unwrap();
 
