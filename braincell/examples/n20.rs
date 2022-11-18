@@ -144,26 +144,26 @@ mod app {
 
     #[task(local=[tx, encoder1, encoder2, encoder3, encoder4, motor1, motor2, motor3, motor4], shared=[])]
     fn read_speed(cx: read_speed::Context) {
-        let start: u64 = monotonics::now().ticks();
-
-        //spin 2 sec
+        let mut start: u64 = monotonics::now().ticks();
         cx.local.motor1.set_power(100.0);
         cx.local.motor2.set_power(100.0);
-        cx.local.motor3.set_power(100.0);
-        cx.local.motor4.set_power(100.0);
+        cx.local.motor3.set_power(-100.0);
+        cx.local.motor4.set_power(-100.0);
+        while monotonics::now().ticks() - start < 230 {}
 
-        while monotonics::now().ticks() - start < 2000 {
-            let timeis: f32 = monotonics::now().ticks() as f32 * 0.001;
-            let new_count1 = cx.local.encoder1.get_speed(timeis);
-            writeln!(cx.local.tx, "enc1: {new_count1}\r").unwrap();
-            let new_count2 = cx.local.encoder2.get_speed(timeis);
-            writeln!(cx.local.tx, "enc2: {new_count2}\r").unwrap();
-            let new_count3 = cx.local.encoder3.get_speed(timeis);
-            writeln!(cx.local.tx, "enc3: {new_count3}\r").unwrap();
-            let new_count4 = cx.local.encoder4.get_speed(timeis);
-            writeln!(cx.local.tx, "enc4: {new_count4}\r").unwrap();
-            asm::delay(1000000);
-        }
+        start = monotonics::now().ticks();
+        cx.local.motor1.set_power(100.0);
+        cx.local.motor2.set_power(100.0);
+        cx.local.motor3.set_power(-80.0);
+        cx.local.motor4.set_power(90.0);
+        while monotonics::now().ticks() - start < 450 {}
+
+        start = monotonics::now().ticks();
+        cx.local.motor1.set_power(100.0);
+        cx.local.motor2.set_power(100.0);
+        cx.local.motor3.set_power(-90.0);
+        cx.local.motor4.set_power(-100.0);
+        while monotonics::now().ticks() - start < 350 {}
 
         cx.local.motor2.set_power(0.0);
         cx.local.motor3.set_power(0.0);

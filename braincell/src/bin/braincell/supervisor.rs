@@ -125,7 +125,45 @@ fn correct_angle(cx: &mut supervisor_task::Context, yaw_error: f32) {
     });
 }
 
+pub fn inner_turns(cx: &mut supervisor_task::Context) {
+    let mut start: u64 = crate::app::monotonics::now().ticks();
+        cx.shared.motor_setpoints.lock(|motor_setpoints| {
+            motor_setpoints.f_left = -2600.0;
+            motor_setpoints.r_left = -2600.0;
+            motor_setpoints.f_right = -2600.0;
+            motor_setpoints.r_right = -2600.0;
+        });
+        while crate::app::monotonics::now().ticks() - start < 230 {}
+
+        start = crate::app::monotonics::now().ticks();
+        cx.shared.motor_setpoints.lock(|motor_setpoints| {
+            motor_setpoints.f_left = -2600.0;
+            motor_setpoints.r_left = -2600.0;
+            motor_setpoints.f_right = -1500.0;
+            motor_setpoints.r_right = 2600.0;
+        });
+        while crate::app::monotonics::now().ticks() - start < 450 {}
+
+        start = crate::app::monotonics::now().ticks();
+        cx.shared.motor_setpoints.lock(|motor_setpoints| {
+            motor_setpoints.f_left = -2600.0;
+            motor_setpoints.r_left = -2600.0;
+            motor_setpoints.f_right = -2340.0;
+            motor_setpoints.r_right = -2600.0;
+        });
+        while crate::app::monotonics::now().ticks() - start < 350 {}
+
+        cx.shared.motor_setpoints.lock(|motor_setpoints| {
+            motor_setpoints.f_left = 0.0;
+            motor_setpoints.r_left = 0.0;
+            motor_setpoints.f_right = 0.0;
+            motor_setpoints.r_right = 0.0;
+        });
+}
+
 pub fn supervisor_task(mut cx: supervisor_task::Context) {
+    // inner_turns(&mut cx);
+    // return;
     if cx.local.supervisor_state.curr_leg == sys_config::DROP_LEG && !cx.local.supervisor_state.in_drop {
         cx.local.supervisor_state.max_base_speed = MAX_LINEAR_SPEED_IN_DROP_DPS;
     }
@@ -266,7 +304,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     } else {
                         cx.local.supervisor_state.curr_leg += 1;
                         cx.local.supervisor_state.state = State::Turning;
-                        asm::delay(200_000);
+                        // asm::delay(200_000);
                     }
                 }
             } else {
@@ -351,7 +389,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                         motor_setpoints.f_left = 0.0;
                         motor_setpoints.r_left = 0.0;
                     });
-                    asm::delay(200_000);
+                    // asm::delay(200_000);
                     cx.local.supervisor_state.smooth_accel_samples = 0;
                     cx.local
                         .supervisor_state
@@ -375,6 +413,11 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     cx.local.supervisor_state.in_drop = false;
                     cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
                     cx.local.supervisor_state.detection_samples_within_tolerance = 0;
+
+                    if cx.local.supervisor_state.curr_leg == 8 {
+                        inner_turns(&mut cx);
+                        return;
+                    }
                 // }
                 // cx.local.supervisor_state.state_transition_samples += 1;
             } else {
