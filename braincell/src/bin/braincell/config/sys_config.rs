@@ -15,6 +15,15 @@ pub const NUM_LEGS_IN_RACE: usize = 11;
 pub const DROP_LEG: usize = 3;
 
 // pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
+//     [100];
+// pub const FRONT_STARTING_DISTANCES_MM: [i32; NUM_LEGS_IN_RACE] = 
+//     [1200];
+// pub const LEFT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
+//     [102];
+// pub const TURNING_YAW_TARGETS_DEG: [f32; NUM_LEGS_IN_RACE] = 
+//     [90.0];
+
+// pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
 //     [100, 100];
 // pub const FRONT_STARTING_DISTANCES_MM: [i32; NUM_LEGS_IN_RACE] = 
 //     [1200, 1500];
@@ -22,6 +31,7 @@ pub const DROP_LEG: usize = 3;
 //     [102, 102];
 // pub const TURNING_YAW_TARGETS_DEG: [f32; NUM_LEGS_IN_RACE] = 
 //     [90.0, 90.0];
+
 // pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
 //     [100, 100, 100, 420];
 // pub const FRONT_STARTING_DISTANCES_MM: [i32; NUM_LEGS_IN_RACE] = 
@@ -30,8 +40,9 @@ pub const DROP_LEG: usize = 3;
 //     [102, 102, 102, 102];
 // pub const TURNING_YAW_TARGETS_DEG: [f32; NUM_LEGS_IN_RACE] = 
 //     [90.0, 90.0, 90.0, 90.0];
+
 pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
-    [100, 100, 100, 400, 410, 410, 440, 740, 760, 760, 760];
+    [100, 100, 100, 400, 410, 410, 440, 740, 760, 760, 780];
 
 pub const FRONT_STARTING_DISTANCES_MM: [i32; NUM_LEGS_IN_RACE] = [
         1200, 1500, 1500, 1500, 1500, 1200, 1200, 1200, 1200, 900, 900,
@@ -40,7 +51,7 @@ pub const LEFT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =
     [102, 102, 102, 102, 412, 412, 442, 442, 762, 762, 762];
 
 pub const TURNING_YAW_TARGETS_DEG: [f32; NUM_LEGS_IN_RACE] = [
-    90.0, 90.0, 90.0, 90.0, 90.0, 90.0, 90.0, 90.0, 90.0, 90.0, 90.0,
+    90.0, 88.0, 90.0, 90.0, 90.0, 90.0, 90.0, 90.0, 90.0, 90.0, 90.0,
     ];
 
 // pub const FRONT_DISTANCE_TARGETS_MM: [i32; NUM_LEGS_IN_RACE] =

@@ -24,6 +24,7 @@ pub struct Data<P: InputPin, FloatT: FloatCore> {
     in_drop: bool,
     max_base_speed: f32,
     target_yaw: f32,
+    trap_rising_edge: bool,
 }
 impl<P, FloatT> Data<P, FloatT>
 where
@@ -45,6 +46,7 @@ where
             in_drop: false,
             max_base_speed: tuning::MAX_LINEAR_SPEED_DPS,
             target_yaw: 90.0,
+            trap_rising_edge: false,
         }
     }
 }
@@ -102,6 +104,27 @@ where
     }
 }
 
+fn correct_angle(cx: &mut supervisor_task::Context, yaw_error: f32) {
+    cx.local.supervisor_state.state_transition_samples = 0;
+    // compute right and left side speed set points
+    let base_speed = turning_speed_profile(yaw_error);
+    let (right_side_speed, left_side_speed) = (-base_speed, base_speed);
+    // let base_speed = fmaxf(fabsf(cx.local.supervisor_state.turning_pid.next_control_output(yaw_error).output), tuning::MIN_TURNING_SPEED_DPS);
+    // let (right_side_speed, left_side_speed): (f32, f32) = 
+    //     if yaw_error < 0.0 {
+    //         (base_speed, -base_speed)
+    //     } else {
+    //         (-base_speed, base_speed)
+    //     };
+    // set motor set points
+    cx.shared.motor_setpoints.lock(|motor_setpoints| {
+        motor_setpoints.f_right = right_side_speed;
+        motor_setpoints.r_right = right_side_speed;
+        motor_setpoints.f_left = left_side_speed;
+        motor_setpoints.r_left = left_side_speed;
+    });
+}
+
 pub fn supervisor_task(mut cx: supervisor_task::Context) {
     if cx.local.supervisor_state.curr_leg == sys_config::DROP_LEG && !cx.local.supervisor_state.in_drop {
         cx.local.supervisor_state.max_base_speed = MAX_LINEAR_SPEED_IN_DROP_DPS;
@@ -141,7 +164,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         pitch,
         tuning::DETECTION_PITCH_LOWER_BOUND_DEG,
         tuning::DETECTION_PITCH_UPPER_BOUND_DEG,
-    ) && !cx.local.supervisor_state.in_drop
+    ) && !cx.local.supervisor_state.in_drop && cx.local.supervisor_state.trap_rising_edge == true
     {
         cx.local.supervisor_state.detection_samples_within_tolerance += 1;
 
@@ -151,6 +174,18 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             // we are level and not in the drop trap, set speed to max
             cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
             cx.local.supervisor_state.detection_samples_within_tolerance = 0;
+            cx.local.supervisor_state.trap_rising_edge = false;
+        } else {
+            // correct angle when leaving any trap
+            let error: f32 = compute_yaw_error(
+                yaw,
+                // sys_config::TURNING_YAW_TARGETS_DEG[cx.local.supervisor_state.curr_leg],
+                0.0
+            );
+            correct_angle(&mut cx, error);
+            // terminate supervisor early to skip linear logic until angle is corrected
+            supervisor_task::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
+            return;
         }
     }
 
@@ -159,8 +194,9 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         cx.local.supervisor_state.in_drop = true;
         cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_IN_DROP_DPS;
     }
-    // detect leaving the drop trap, speed will be reset once we level out
-    if cx.local.supervisor_state.in_drop && pitch > tuning::DETECTION_PITCH_UPPER_BOUND_DEG {
+    // detect leaving traps. For drop trap, speed will be reset once we level out.
+    if pitch > tuning::DETECTION_PITCH_UPPER_BOUND_DEG {
+        cx.local.supervisor_state.trap_rising_edge = true;
         cx.local.supervisor_state.in_drop = false;
     }
 
@@ -270,7 +306,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     .next_control_output(fabsf(left_dist_error as f32))
                     .output);
                 let (right_side_speed, left_side_speed): (f32, f32) = {
-                    let left_accel_comp = fminf(
+                    let accel_comp = fminf(
                         cx.local.supervisor_state.smooth_accel_samples as f32
                             / tuning::SMOOTH_ACCEL_NUM_SAMPLES as f32,
                         1.0,
@@ -278,14 +314,14 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     if left_dist_error > 0 {
                         // too far from wall, move left
                         (
-                            base_speed,
-                            base_speed * (1.0 - dist_comp_alpha) * left_accel_comp,
+                            base_speed * accel_comp,
+                            base_speed * (1.0 - dist_comp_alpha) * accel_comp,
                         )
                     } else {
                         // too close to wall, move right
                         (
-                            base_speed * (1.0 - dist_comp_alpha),
-                            base_speed * left_accel_comp,
+                            base_speed * (1.0 - dist_comp_alpha) * accel_comp,
+                            base_speed * accel_comp,
                         )
                     }
                 };
@@ -342,24 +378,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 // }
                 // cx.local.supervisor_state.state_transition_samples += 1;
             } else {
-                cx.local.supervisor_state.state_transition_samples = 0;
-                // compute right and left side speed set points
-                let base_speed = turning_speed_profile(yaw_error);
-                let (right_side_speed, left_side_speed) = (-base_speed, base_speed);
-                // let base_speed = fmaxf(fabsf(cx.local.supervisor_state.turning_pid.next_control_output(yaw_error).output), tuning::MIN_TURNING_SPEED_DPS);
-                // let (right_side_speed, left_side_speed): (f32, f32) = 
-                //     if yaw_error < 0.0 {
-                //         (base_speed, -base_speed)
-                //     } else {
-                //         (-base_speed, base_speed)
-                //     };
-                // set motor set points
-                cx.shared.motor_setpoints.lock(|motor_setpoints| {
-                    motor_setpoints.f_right = right_side_speed;
-                    motor_setpoints.r_right = right_side_speed;
-                    motor_setpoints.f_left = left_side_speed;
-                    motor_setpoints.r_left = left_side_speed;
-                });
+                correct_angle(&mut cx, yaw_error);
             }
         }
     }
