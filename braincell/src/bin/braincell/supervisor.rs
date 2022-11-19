@@ -3,12 +3,11 @@ use crate::config::tuning::MAX_LINEAR_SPEED_IN_DROP_DPS;
 use crate::config::{sys_config, tuning};
 use cortex_m::asm;
 use embedded_hal::digital::v2::InputPin;
-use libm::{fabsf, fminf, fmaxf};
+use libm::{fabsf, fminf};
 use num_traits::float::FloatCore;
 use pid::Pid;
 use rtic::Mutex;
 use systick_monotonic::fugit::Duration;
-use core::fmt::Write;
 
 pub struct Data<P: InputPin, FloatT: FloatCore> {
     button: P,
@@ -19,7 +18,6 @@ pub struct Data<P: InputPin, FloatT: FloatCore> {
     detection_samples_within_tolerance: usize,
     distance_pid: pid::Pid<FloatT>,
     side_dist_compensation_pid: pid::Pid<FloatT>,
-    turning_pid: pid::Pid<FloatT>,
     prev_front_distance: i32,
     in_drop: bool,
     max_base_speed: f32,
@@ -31,7 +29,7 @@ where
     P: InputPin,
     FloatT: FloatCore,
 {
-    pub fn new(button: P, distance_pid: Pid<FloatT>, side_dist_comp_pid: Pid<FloatT>, turning_pid: Pid<FloatT>) -> Self {
+    pub fn new(button: P, distance_pid: Pid<FloatT>, side_dist_comp_pid: Pid<FloatT>) -> Self {
         Data {
             button: button,
             state: State::Idle,
@@ -41,7 +39,6 @@ where
             detection_samples_within_tolerance: 0,
             distance_pid: distance_pid,
             side_dist_compensation_pid: side_dist_comp_pid,
-            turning_pid: turning_pid,
             prev_front_distance: sys_config::MAX_TOF_DISTANCE_MM,
             in_drop: false,
             max_base_speed: tuning::MAX_LINEAR_SPEED_DPS,
@@ -109,14 +106,6 @@ fn correct_angle(cx: &mut supervisor_task::Context, yaw_error: f32) {
     // compute right and left side speed set points
     let base_speed = turning_speed_profile(yaw_error);
     let (right_side_speed, left_side_speed) = (-base_speed, base_speed);
-    // let base_speed = fmaxf(fabsf(cx.local.supervisor_state.turning_pid.next_control_output(yaw_error).output), tuning::MIN_TURNING_SPEED_DPS);
-    // let (right_side_speed, left_side_speed): (f32, f32) = 
-    //     if yaw_error < 0.0 {
-    //         (base_speed, -base_speed)
-    //     } else {
-    //         (-base_speed, base_speed)
-    //     };
-    // set motor set points
     cx.shared.motor_setpoints.lock(|motor_setpoints| {
         motor_setpoints.f_right = right_side_speed;
         motor_setpoints.r_right = right_side_speed;
@@ -126,7 +115,9 @@ fn correct_angle(cx: &mut supervisor_task::Context, yaw_error: f32) {
 }
 
 pub fn supervisor_task(mut cx: supervisor_task::Context) {
-    if cx.local.supervisor_state.curr_leg == sys_config::DROP_LEG && !cx.local.supervisor_state.in_drop {
+    if cx.local.supervisor_state.curr_leg == sys_config::DROP_LEG
+        && !cx.local.supervisor_state.in_drop
+    {
         cx.local.supervisor_state.max_base_speed = MAX_LINEAR_SPEED_IN_DROP_DPS;
     }
     // get TOF and IMU readings
@@ -147,11 +138,6 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         .imu_filter
         .lock(|imu_filter| (pitch, roll, yaw) = imu_filter.filtered().unwrap_or((0.0, 0.0, 0.0))); // IMU is mounted sideways -> swap pitch and roll
 
-
-    cx.shared
-        .tx
-        .lock(|tx| writeln!(tx, "pitch {pitch} yaw {yaw}"));
-
     // if Herbie is tilted in pitch, take "distance" to be previous measured distance when Herbie was level with the ground
     if !within_range(
         pitch,
@@ -160,11 +146,16 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
     ) {
         front_distance = cx.local.supervisor_state.prev_front_distance;
     }
+
+    // handles leaving a trap
+    // note that this will terminate the supervisor thread early for the first tuning::DETECTION_NUM_SAMPLES
+    // in order to correct our angle before proceeding
     if within_range(
         pitch,
         tuning::DETECTION_PITCH_LOWER_BOUND_DEG,
         tuning::DETECTION_PITCH_UPPER_BOUND_DEG,
-    ) && !cx.local.supervisor_state.in_drop && cx.local.supervisor_state.trap_rising_edge == true
+    ) && !cx.local.supervisor_state.in_drop
+        && cx.local.supervisor_state.trap_rising_edge == true
     {
         cx.local.supervisor_state.detection_samples_within_tolerance += 1;
 
@@ -177,11 +168,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             cx.local.supervisor_state.trap_rising_edge = false;
         } else {
             // correct angle when leaving any trap
-            let error: f32 = compute_yaw_error(
-                yaw,
-                // sys_config::TURNING_YAW_TARGETS_DEG[cx.local.supervisor_state.curr_leg],
-                0.0
-            );
+            let error: f32 = compute_yaw_error(yaw, 0.0);
             correct_angle(&mut cx, error);
             // terminate supervisor early to skip linear logic until angle is corrected
             supervisor_task::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
@@ -190,7 +177,10 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
     }
 
     // detect entering the drop trap, set lower speed max
-    if cx.local.supervisor_state.curr_leg == sys_config::DROP_LEG && !cx.local.supervisor_state.in_drop && pitch < tuning::DETECTION_PITCH_LOWER_BOUND_DEG {
+    if cx.local.supervisor_state.curr_leg == sys_config::DROP_LEG
+        && !cx.local.supervisor_state.in_drop
+        && pitch < tuning::DETECTION_PITCH_LOWER_BOUND_DEG
+    {
         cx.local.supervisor_state.in_drop = true;
         cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_IN_DROP_DPS;
     }
@@ -257,7 +247,9 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     });
                 }
                 cx.local.supervisor_state.state_transition_samples += 1;
-                if cx.local.supervisor_state.state_transition_samples == tuning::STATE_TRANSITION_SAMPLES {
+                if cx.local.supervisor_state.state_transition_samples
+                    == tuning::STATE_TRANSITION_SAMPLES
+                {
                     cx.local.supervisor_state.state_transition_samples = 0;
                     if cx.local.supervisor_state.curr_leg == sys_config::NUM_LEGS_IN_RACE - 1 {
                         // race is complete
@@ -299,13 +291,15 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 {
                     cx.local.supervisor_state.distance_pid.reset_integral_term();
                 }
-                let dist_comp_alpha: f32 = fabsf(cx
-                    .local
-                    .supervisor_state
-                    .side_dist_compensation_pid
-                    .next_control_output(fabsf(left_dist_error as f32))
-                    .output);
+                let dist_comp_alpha: f32 = fabsf(
+                    cx.local
+                        .supervisor_state
+                        .side_dist_compensation_pid
+                        .next_control_output(fabsf(left_dist_error as f32))
+                        .output,
+                );
                 let (right_side_speed, left_side_speed): (f32, f32) = {
+                    // accel_comp used to implement smooth acceleration
                     let accel_comp = fminf(
                         cx.local.supervisor_state.smooth_accel_samples as f32
                             / tuning::SMOOTH_ACCEL_NUM_SAMPLES as f32,
@@ -337,46 +331,41 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
         State::Turning => {
             block_if_button_pressed(&cx.local.supervisor_state.button);
             // check if yaw set point is reached
-            let yaw_error: f32 = compute_yaw_error(
-                yaw,
-                // sys_config::TURNING_YAW_TARGETS_DEG[cx.local.supervisor_state.curr_leg],
-                cx.local.supervisor_state.target_yaw
-            );
+            let yaw_error: f32 = compute_yaw_error(yaw, cx.local.supervisor_state.target_yaw);
             if fabsf(yaw_error) < tuning::YAW_TOLERANCE_DEG {
-                // if cx.local.supervisor_state.state_transition_samples == tuning::STATE_TRANSITION_SAMPLES {
-                    cx.local.supervisor_state.state_transition_samples = 0;
-                    cx.shared.motor_setpoints.lock(|motor_setpoints| {
-                        motor_setpoints.f_right = 0.0;
-                        motor_setpoints.r_right = 0.0;
-                        motor_setpoints.f_left = 0.0;
-                        motor_setpoints.r_left = 0.0;
-                    });
-                    asm::delay(200_000);
-                    cx.local.supervisor_state.smooth_accel_samples = 0;
-                    cx.local
-                        .supervisor_state
-                        .side_dist_compensation_pid
-                        .reset_integral_term();
-                    cx.local.supervisor_state.distance_pid.reset_integral_term();
-                    cx.local.supervisor_state.distance_pid.setpoint =
-                        sys_config::FRONT_DISTANCE_TARGETS_MM[cx.local.supervisor_state.curr_leg]
-                            as f32;
-                    cx.shared
-                        .tof_front_filter
-                        .lock(|tof_front_filter| tof_front_filter.reset());
-                    cx.shared
-                        .tof_left_filter
-                        .lock(|tof_left_filter| tof_left_filter.reset());
-                    cx.local.supervisor_state.target_yaw = 180.0 - yaw;
-                    cx.shared.imu_filter.lock(|imu_filter| imu_filter.reset());
-                    cx.local.supervisor_state.state = State::Linear;
-                    cx.local.supervisor_state.prev_front_distance =
-                        sys_config::FRONT_STARTING_DISTANCES_MM[cx.local.supervisor_state.curr_leg];
-                    cx.local.supervisor_state.in_drop = false;
-                    cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
-                    cx.local.supervisor_state.detection_samples_within_tolerance = 0;
-                // }
-                // cx.local.supervisor_state.state_transition_samples += 1;
+                // turn is complete
+                // reset state variables for next leg
+                cx.local.supervisor_state.state_transition_samples = 0;
+                cx.shared.motor_setpoints.lock(|motor_setpoints| {
+                    motor_setpoints.f_right = 0.0;
+                    motor_setpoints.r_right = 0.0;
+                    motor_setpoints.f_left = 0.0;
+                    motor_setpoints.r_left = 0.0;
+                });
+                cx.local.supervisor_state.smooth_accel_samples = 0;
+                cx.local
+                    .supervisor_state
+                    .side_dist_compensation_pid
+                    .reset_integral_term();
+                cx.local.supervisor_state.distance_pid.reset_integral_term();
+                cx.local.supervisor_state.distance_pid.setpoint =
+                    sys_config::FRONT_DISTANCE_TARGETS_MM[cx.local.supervisor_state.curr_leg]
+                        as f32;
+                cx.shared
+                    .tof_front_filter
+                    .lock(|tof_front_filter| tof_front_filter.reset());
+                cx.shared
+                    .tof_left_filter
+                    .lock(|tof_left_filter| tof_left_filter.reset());
+                cx.local.supervisor_state.target_yaw = 180.0 - yaw;
+                cx.shared.imu_filter.lock(|imu_filter| imu_filter.reset());
+                cx.local.supervisor_state.state = State::Linear;
+                cx.local.supervisor_state.prev_front_distance =
+                    sys_config::FRONT_STARTING_DISTANCES_MM[cx.local.supervisor_state.curr_leg];
+                cx.local.supervisor_state.in_drop = false;
+                cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
+                cx.local.supervisor_state.detection_samples_within_tolerance = 0;
+                asm::delay(200_000);
             } else {
                 correct_angle(&mut cx, yaw_error);
             }
