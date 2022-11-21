@@ -38,8 +38,8 @@ mod app {
     struct Shared {
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
         imu_filter: filter::ImuFilter<{ tuning::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>,
-        tof_front_filter: sma::SmaFilter<i32, { tuning::TOF_SMA_FILTER_SIZE }>,
-        tof_left_filter: sma::SmaFilter<i32, { tuning::TOF_SMA_FILTER_SIZE }>,
+        tof_front_filter: sma::SmaFilter<i32, { tuning::TOF_FRONT_SMA_FILTER_SIZE }>,
+        tof_left_filter: sma::SmaFilter<i32, { tuning::TOF_LEFT_SMA_FILTER_SIZE }>,
         motor_setpoints: controller::motor::MotorSetPoints,
     }
 
@@ -67,14 +67,8 @@ mod app {
         encoder_r_right:
             n20::N20<Qei<TIM5, (Pin<'A', 0, Alternate<2>>, Pin<'A', 1, Alternate<2>>)>>,
         filter_data_prev_ticks: u64,
-        button: Pin<'C', 13, Input>,
         led: Pin<'A', 5, Output>,
-        state: supervisor::State,
-        curr_leg: usize,
-        num_samples_within_tolerance: usize,
-        distance_pid: pid::Pid<f32>,
-        side_dist_compensation_pid: pid::Pid<f32>,
-        prev_front_distance: i32,
+        supervisor_state: supervisor::Data<Pin<'C', 13, Input>, f32>,
     }
 
     #[monotonic(binds = SysTick, default = true)]
@@ -211,14 +205,14 @@ mod app {
         }
 
         // set up filters
-        let tof_front_filter = sma::SmaFilter::<i32, { tuning::TOF_SMA_FILTER_SIZE }>::new();
-        let tof_left_filter = sma::SmaFilter::<i32, { tuning::TOF_SMA_FILTER_SIZE }>::new();
+        let tof_front_filter = sma::SmaFilter::<i32, { tuning::TOF_FRONT_SMA_FILTER_SIZE }>::new();
+        let tof_left_filter = sma::SmaFilter::<i32, { tuning::TOF_LEFT_SMA_FILTER_SIZE }>::new();
         let imu_filter =
             filter::ImuFilter::<{ tuning::IMU_SMA_FILTER_SIZE }, mahony::MahonyFilter>::new(
                 mahony::MahonyFilter::new(
-                    mahony::DEFAULT_KP,
-                    mahony::DEFAULT_KI,
-                    tuning::IMU_USE_MAG,
+                    tuning::IMU_FILTER_KP,
+                    tuning::IMU_FILTER_KI,
+                    tuning::IMU_FILTER_USE_MAG,
                 ),
                 tuning::IMU_GYRO_BIAS_DPS,
             );
@@ -290,10 +284,6 @@ mod app {
         let encoder_r_right = n20::N20::new(encoder4_qei);
 
         // supervisor state variables
-        let state: supervisor::State = supervisor::State::Idle;
-        let curr_leg: usize = 0;
-        let num_samples_within_tolerance: usize = 0;
-        let prev_front_distance: i32 = 0;
         let distance_pid = pid::Pid::new(
             tuning::DISTANCE_PID_KP,
             tuning::DISTANCE_PID_KI,
@@ -314,10 +304,12 @@ mod app {
             tuning::SIDE_DIST_COMPENSATION_PID_OUT_LIM,
             0.0,
         );
+        let supervisor_state =
+            supervisor::Data::new(button, distance_pid, side_dist_compensation_pid);
 
         writeln!(tx, "system initialized\r").unwrap();
 
-        let filter_data_prev_ticks: u64 = monotonics::now().ticks() + 1000;
+        let filter_data_prev_ticks: u64 = monotonics::now().ticks();
         filter_data::spawn_after(Duration::<u64, 1, 1000>::millis(1)).unwrap();
         speed_control::spawn_after(Duration::<u64, 1, 1000>::millis(1)).unwrap();
         blinky::spawn_after(Duration::<u64, 1, 1000>::millis(1)).unwrap();
@@ -343,14 +335,8 @@ mod app {
                 encoder_f_right,
                 encoder_r_right,
                 filter_data_prev_ticks,
-                button,
                 led,
-                state,
-                curr_leg,
-                num_samples_within_tolerance,
-                distance_pid,
-                side_dist_compensation_pid,
-                prev_front_distance,
+                supervisor_state,
             },
             init::Monotonics(mono),
         )
@@ -370,11 +356,11 @@ mod app {
 
     use crate::supervisor::supervisor_task;
     extern "Rust" {
-        #[task(local=[button, state, curr_leg, num_samples_within_tolerance, distance_pid, side_dist_compensation_pid, prev_front_distance], shared=[motor_setpoints, tof_front_filter, tof_left_filter, imu_filter], priority=2)]
+        #[task(local=[supervisor_state], shared=[motor_setpoints, tof_front_filter, tof_left_filter, imu_filter, tx], priority=2)]
         fn supervisor_task(context: supervisor_task::Context);
     }
 
-    #[task(local=[led], shared=[], priority=1)]
+    #[task(local=[led], shared=[tx], priority=1)]
     fn blinky(cx: blinky::Context) {
         cx.local.led.toggle();
         blinky::spawn_after(Duration::<u64, 1, 1000>::millis(1000)).unwrap();
