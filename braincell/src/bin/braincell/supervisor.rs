@@ -23,6 +23,7 @@ pub struct Data<P: InputPin, FloatT: FloatCore> {
     max_base_speed: f32,
     target_yaw: f32,
     trap_rising_edge: bool,
+    angle_correct_samples: usize,
 }
 impl<P, FloatT> Data<P, FloatT>
 where
@@ -44,6 +45,7 @@ where
             max_base_speed: tuning::MAX_LINEAR_SPEED_DPS,
             target_yaw: 90.0,
             trap_rising_edge: false,
+            angle_correct_samples: 0,
         }
     }
 }
@@ -102,7 +104,6 @@ where
 }
 
 fn correct_angle(cx: &mut supervisor_task::Context, yaw_error: f32) {
-    cx.local.supervisor_state.state_transition_samples = 0;
     // compute right and left side speed set points
     let base_speed = turning_speed_profile(yaw_error);
     let (right_side_speed, left_side_speed) = (-base_speed, base_speed);
@@ -111,6 +112,42 @@ fn correct_angle(cx: &mut supervisor_task::Context, yaw_error: f32) {
         motor_setpoints.r_right = right_side_speed;
         motor_setpoints.f_left = left_side_speed;
         motor_setpoints.r_left = left_side_speed;
+    });
+}
+
+pub fn inner_turns(cx: &mut supervisor_task::Context) {
+    let mut start: u64 = crate::app::monotonics::now().ticks();
+    cx.shared.motor_setpoints.lock(|motor_setpoints| {
+        motor_setpoints.f_left = -2600.0;
+        motor_setpoints.r_left = -2600.0;
+        motor_setpoints.f_right = -2600.0;
+        motor_setpoints.r_right = -2600.0;
+    });
+    while crate::app::monotonics::now().ticks() - start < 230 {}
+
+    start = crate::app::monotonics::now().ticks();
+    cx.shared.motor_setpoints.lock(|motor_setpoints| {
+        motor_setpoints.f_left = -2600.0;
+        motor_setpoints.r_left = -2600.0;
+        motor_setpoints.f_right = -1500.0;
+        motor_setpoints.r_right = 2600.0;
+    });
+    while crate::app::monotonics::now().ticks() - start < 450 {}
+
+    start = crate::app::monotonics::now().ticks();
+    cx.shared.motor_setpoints.lock(|motor_setpoints| {
+        motor_setpoints.f_left = -2600.0;
+        motor_setpoints.r_left = -2600.0;
+        motor_setpoints.f_right = -2340.0;
+        motor_setpoints.r_right = -2600.0;
+    });
+    while crate::app::monotonics::now().ticks() - start < 350 {}
+
+    cx.shared.motor_setpoints.lock(|motor_setpoints| {
+        motor_setpoints.f_left = 0.0;
+        motor_setpoints.r_left = 0.0;
+        motor_setpoints.f_right = 0.0;
+        motor_setpoints.r_right = 0.0;
     });
 }
 
@@ -168,7 +205,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             cx.local.supervisor_state.trap_rising_edge = false;
         } else {
             // correct angle when leaving any trap
-            let error: f32 = compute_yaw_error(yaw, 0.0);
+            let error: f32 = compute_yaw_error(yaw, cx.local.supervisor_state.target_yaw - 90.0);
             correct_angle(&mut cx, error);
             // terminate supervisor early to skip linear logic until angle is corrected
             supervisor_task::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();
@@ -224,6 +261,8 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             }
         }
         State::Linear => {
+            // inner_turns(&mut cx);
+            // return;
             block_if_button_pressed(&cx.local.supervisor_state.button);
             // check if linear leg is complete
             if fabsf(
@@ -326,12 +365,24 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     motor_setpoints.f_left = left_side_speed;
                     motor_setpoints.r_left = left_side_speed;
                 });
+                if cx.local.supervisor_state.curr_leg <= 3 {
+                    cx.local.supervisor_state.angle_correct_samples += 1;
+                    if cx.local.supervisor_state.angle_correct_samples == tuning::ANGLE_CORRECT_SAMPLES {
+                        cx.local.supervisor_state.angle_correct_samples = 0;
+                        let yaw_target = cx.local.supervisor_state.target_yaw - 90.0;
+                        if fabsf(compute_yaw_error(yaw, yaw_target)) > tuning::YAW_TOLERANCE_DEG {
+                            correct_angle(&mut cx, compute_yaw_error(yaw, yaw_target));
+                            asm::delay(50_000);
+                        } 
+                    }
+                }
             }
         }
         State::Turning => {
             block_if_button_pressed(&cx.local.supervisor_state.button);
             // check if yaw set point is reached
             let yaw_error: f32 = compute_yaw_error(yaw, cx.local.supervisor_state.target_yaw);
+            // if fabsf(yaw_error) < (if cx.local.supervisor_state.curr_leg == 8 {tuning::OL_INNER_YAW_TOL_DEG} else {tuning::YAW_TOLERANCE_DEG}) {
             if fabsf(yaw_error) < tuning::YAW_TOLERANCE_DEG {
                 // turn is complete
                 // reset state variables for next leg
@@ -366,7 +417,12 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
                 cx.local.supervisor_state.detection_samples_within_tolerance = 0;
                 asm::delay(200_000);
+                // if cx.local.supervisor_state.curr_leg == 8 {
+                //     inner_turns(&mut cx);
+                //     return;
+                // }
             } else {
+                cx.local.supervisor_state.state_transition_samples = 0;
                 correct_angle(&mut cx, yaw_error);
             }
         }
