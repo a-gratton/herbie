@@ -129,7 +129,7 @@ pub fn inner_turns(cx: &mut supervisor_task::Context) {
     cx.shared.motor_setpoints.lock(|motor_setpoints| {
         motor_setpoints.f_left = -2600.0;
         motor_setpoints.r_left = -2600.0;
-        motor_setpoints.f_right = -1500.0;
+        motor_setpoints.f_right = -1100.0;
         motor_setpoints.r_right = 2600.0;
     });
     while crate::app::monotonics::now().ticks() - start < 450 {}
@@ -141,7 +141,7 @@ pub fn inner_turns(cx: &mut supervisor_task::Context) {
         motor_setpoints.f_right = -2340.0;
         motor_setpoints.r_right = -2600.0;
     });
-    while crate::app::monotonics::now().ticks() - start < 350 {}
+    while crate::app::monotonics::now().ticks() - start < 275 {}
 
     cx.shared.motor_setpoints.lock(|motor_setpoints| {
         motor_setpoints.f_left = 0.0;
@@ -261,8 +261,8 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             }
         }
         State::Linear => {
-            // inner_turns(&mut cx);
-            // return;
+            inner_turns(&mut cx);
+            return;
             block_if_button_pressed(&cx.local.supervisor_state.button);
             // check if linear leg is complete
             if fabsf(
