@@ -297,7 +297,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                     } else {
                         cx.local.supervisor_state.curr_leg += 1;
                         cx.local.supervisor_state.state = State::Turning;
-                        asm::delay(200_000);
+                        // asm::delay(200_000);
                     }
                 }
             } else {
@@ -416,7 +416,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 cx.local.supervisor_state.in_drop = false;
                 cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
                 cx.local.supervisor_state.detection_samples_within_tolerance = 0;
-                asm::delay(200_000);
+                // asm::delay(200_000);
                 // if cx.local.supervisor_state.curr_leg == 8 {
                 //     inner_turns(&mut cx);
                 //     return;
