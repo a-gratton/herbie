@@ -117,6 +117,7 @@ fn correct_angle(cx: &mut supervisor_task::Context, yaw_error: f32) {
 
 pub fn inner_turns(cx: &mut supervisor_task::Context) {
     let mut start: u64 = crate::app::monotonics::now().ticks();
+    // if 4th tile is blank (start leg 8 after turn)
     cx.shared.motor_setpoints.lock(|motor_setpoints| {
         motor_setpoints.f_left = -2600.0;
         motor_setpoints.r_left = -2600.0;
@@ -132,7 +133,7 @@ pub fn inner_turns(cx: &mut supervisor_task::Context) {
         motor_setpoints.f_right = -1100.0;
         motor_setpoints.r_right = 2600.0;
     });
-    while crate::app::monotonics::now().ticks() - start < 450 {}
+    while crate::app::monotonics::now().ticks() - start < 400 {}
 
     start = crate::app::monotonics::now().ticks();
     cx.shared.motor_setpoints.lock(|motor_setpoints| {
@@ -141,7 +142,7 @@ pub fn inner_turns(cx: &mut supervisor_task::Context) {
         motor_setpoints.f_right = -2340.0;
         motor_setpoints.r_right = -2600.0;
     });
-    while crate::app::monotonics::now().ticks() - start < 275 {}
+    while crate::app::monotonics::now().ticks() - start < 300 {}
 
     cx.shared.motor_setpoints.lock(|motor_setpoints| {
         motor_setpoints.f_left = 0.0;
@@ -261,8 +262,6 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             }
         }
         State::Linear => {
-            inner_turns(&mut cx);
-            return;
             block_if_button_pressed(&cx.local.supervisor_state.button);
             // check if linear leg is complete
             if fabsf(
@@ -372,7 +371,7 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                         let yaw_target = cx.local.supervisor_state.target_yaw - 90.0;
                         if fabsf(compute_yaw_error(yaw, yaw_target)) > tuning::YAW_TOLERANCE_DEG {
                             correct_angle(&mut cx, compute_yaw_error(yaw, yaw_target));
-                            asm::delay(50_000);
+                            asm::delay(40_000);
                         } 
                     }
                 }
@@ -382,8 +381,8 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
             block_if_button_pressed(&cx.local.supervisor_state.button);
             // check if yaw set point is reached
             let yaw_error: f32 = compute_yaw_error(yaw, cx.local.supervisor_state.target_yaw);
-            // if fabsf(yaw_error) < (if cx.local.supervisor_state.curr_leg == 8 {tuning::OL_INNER_YAW_TOL_DEG} else {tuning::YAW_TOLERANCE_DEG}) {
-            if fabsf(yaw_error) < tuning::YAW_TOLERANCE_DEG {
+            if fabsf(yaw_error) < (if cx.local.supervisor_state.curr_leg == 8 {tuning::OL_INNER_YAW_TOL_DEG} else {tuning::YAW_TOLERANCE_DEG}) {
+            // if fabsf(yaw_error) < tuning::YAW_TOLERANCE_DEG {
                 // turn is complete
                 // reset state variables for next leg
                 cx.local.supervisor_state.state_transition_samples = 0;
@@ -416,11 +415,11 @@ pub fn supervisor_task(mut cx: supervisor_task::Context) {
                 cx.local.supervisor_state.in_drop = false;
                 cx.local.supervisor_state.max_base_speed = tuning::MAX_LINEAR_SPEED_DPS;
                 cx.local.supervisor_state.detection_samples_within_tolerance = 0;
-                // asm::delay(200_000);
-                // if cx.local.supervisor_state.curr_leg == 8 {
-                //     inner_turns(&mut cx);
-                //     return;
-                // }
+                if cx.local.supervisor_state.curr_leg == 8 {
+                    asm::delay(200_000);
+                    inner_turns(&mut cx);
+                    return;
+                }
             } else {
                 cx.local.supervisor_state.state_transition_samples = 0;
                 correct_angle(&mut cx, yaw_error);

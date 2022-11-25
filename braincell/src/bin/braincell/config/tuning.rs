@@ -22,12 +22,12 @@ pub const TOF_PITCH_UPPER_BOUND_DEG: f32 = 10.0;
 
 // trap detection
 pub const DETECTION_PITCH_LOWER_BOUND_DEG: f32 = -5.0;
-pub const DETECTION_PITCH_UPPER_BOUND_DEG: f32 = 4.0;
+pub const DETECTION_PITCH_UPPER_BOUND_DEG: f32 = 3.0;
 pub const DETECTION_NUM_SAMPLES: usize = 10;
 pub const MAX_LINEAR_SPEED_IN_DROP_DPS: f32 = 1000.0;
 
 // linear base speed tuning
-pub const MAX_LINEAR_SPEED_DPS: f32 = 1800.0;
+pub const MAX_LINEAR_SPEED_DPS: f32 = 1900.0;
 pub const DISTANCE_PID_KP: f32 = 3.0;
 pub const DISTANCE_PID_KI: f32 = 0.0;
 pub const DISTANCE_PID_KD: f32 = 0.3;
@@ -57,6 +57,6 @@ pub const OL_INNER_YAW_TOL_DEG: f32 = 2.0;
 pub const SMOOTH_ACCEL_NUM_SAMPLES: usize = 1;
 
 // steady-state samples required for transition
-pub const STATE_TRANSITION_SAMPLES: usize = 5;
+pub const STATE_TRANSITION_SAMPLES: usize = 3;
 
-pub const ANGLE_CORRECT_SAMPLES: usize = 50;
+pub const ANGLE_CORRECT_SAMPLES: usize = 40;
