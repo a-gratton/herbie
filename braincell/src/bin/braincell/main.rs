@@ -24,7 +24,9 @@ mod app {
     use panic_write::PanicHandler;
     use pid;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Input, Output, Pin, PushPull, OpenDrain, PA8, PA9, PB10, PC1, PC12, PC2, PC9},
+        gpio::{
+            Alternate, Input, OpenDrain, Output, Pin, PushPull, PA8, PA9, PB10, PC1, PC12, PC2, PC9,
+        },
         i2c::{I2c, Mode as i2cMode},
         pac::{I2C2, I2C3, SPI2, TIM1, TIM10, TIM12, TIM14, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
         prelude::*,
@@ -145,17 +147,18 @@ mod app {
         let led = gpioa.pa5.into_push_pull_output();
 
         // set up ToF sensors
-        let mut tof_front_xshut = gpioc.pc10.into_open_drain_output();
-        tof_front_xshut.set_high();
-        asm::delay(1_000_000);
-        let mut tof_front =
-            match vl53l1x::VL53L1::new(&mut i2c2, sys_config::TOF_FRONT_ADDRESS, Some(tof_front_xshut)) {
-                Ok(val) => val,
-                Err(_) => {
-                    writeln!(tx, "tof_front initialization failed\r").unwrap();
-                    panic!("tof_front initialization failed");
-                }
-            };
+        let tof_front_xshut = gpioc.pc10.into_open_drain_output();
+        let tof_front = match vl53l1x::VL53L1::new(
+            &mut i2c2,
+            sys_config::TOF_FRONT_ADDRESS,
+            Some(tof_front_xshut),
+        ) {
+            Ok(val) => val,
+            Err(_) => {
+                writeln!(tx, "tof_front initialization failed\r").unwrap();
+                panic!("tof_front initialization failed");
+            }
+        };
         if let Err(_) = tof_front.start_ranging(
             &mut i2c2,
             Some(vl53l1x_constants::DEFAULT_DM),
@@ -166,17 +169,18 @@ mod app {
             panic!("tof_front start_ranging failed");
         }
 
-        let mut tof_left_xshut = gpioc.pc8.into_open_drain_output();
-        tof_left_xshut.set_high();
-        asm::delay(1_000_000);
-        let tof_left =
-            match vl53l1x::VL53L1::new(&mut i2c3, sys_config::TOF_LEFT_ADDRESS, Some(tof_left_xshut)) {
-                Ok(val) => val,
-                Err(_) => {
-                    writeln!(tx, "tof_left initialization failed\r").unwrap();
-                    panic!("tof_left initialization failed");
-                }
-            };
+        let tof_left_xshut = gpioc.pc8.into_open_drain_output();
+        let tof_left = match vl53l1x::VL53L1::new(
+            &mut i2c3,
+            sys_config::TOF_LEFT_ADDRESS,
+            Some(tof_left_xshut),
+        ) {
+            Ok(val) => val,
+            Err(_) => {
+                writeln!(tx, "tof_left initialization failed\r").unwrap();
+                panic!("tof_left initialization failed");
+            }
+        };
         if let Err(_) = tof_left.start_ranging(
             &mut i2c3,
             Some(vl53l1x_constants::DEFAULT_DM),

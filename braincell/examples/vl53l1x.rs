@@ -8,7 +8,9 @@ mod app {
         vl53l1x_constants::{DEFAULT_DM, DEFAULT_IM_MS, DEFAULT_TB},
     };
     use core::fmt::Write;
+    use cortex_m::asm;
     use panic_write::PanicHandler;
+    use stm32f4xx_hal::gpio::{OpenDrain, Output, Pin};
     use stm32f4xx_hal::{
         gpio::{PA8, PB10, PC12, PC9},
         i2c::{I2c, Mode as i2cMode},
@@ -17,8 +19,6 @@ mod app {
         serial::{Config, Serial, Tx},
     };
     use systick_monotonic::{fugit::Duration, Systick};
-    use stm32f4xx_hal::gpio::{Pin, Output, OpenDrain};
-    use cortex_m::asm;
 
     #[shared]
     struct Shared {}
@@ -88,14 +88,13 @@ mod app {
         let mut tof_front_xshut = gpioc.pc10.into_open_drain_output();
         tof_front_xshut.set_high();
         asm::delay(1_000_000);
-        let tof_front =
-            match vl53l1x::VL53L1::new(&mut i2c2, 0x42, Some(tof_front_xshut)) {
-                Ok(val) => val,
-                Err(_) => {
-                    writeln!(tx, "tof_front initialization failed\r").unwrap();
-                    panic!("tof_front initialization failed");
-                }
-            };
+        let tof_front = match vl53l1x::VL53L1::new(&mut i2c2, 0x42, Some(tof_front_xshut)) {
+            Ok(val) => val,
+            Err(_) => {
+                writeln!(tx, "tof_front initialization failed\r").unwrap();
+                panic!("tof_front initialization failed");
+            }
+        };
         if let Err(_) = tof_front.start_ranging(
             &mut i2c2,
             Some(DEFAULT_DM),
@@ -105,12 +104,10 @@ mod app {
             writeln!(tx, "error starting tof_front ranging").unwrap();
         }
 
-        
         let mut tof_left_xshut = gpioc.pc8.into_open_drain_output();
         tof_left_xshut.set_high();
         asm::delay(1_000_000);
-        let tof_left = match vl53l1x::VL53L1::new(&mut i2c3, 0x69, Some(tof_left_xshut))
-        {
+        let tof_left = match vl53l1x::VL53L1::new(&mut i2c3, 0x69, Some(tof_left_xshut)) {
             Ok(val) => val,
             Err(_) => {
                 writeln!(tx, "tof_left initialization failed\r").unwrap();
@@ -200,15 +197,6 @@ mod app {
             .unwrap();
             *cx.local.front_dist = None;
             *cx.local.left_dist = None;
-            cx.local.tof_front.hardware_reset(cx.local.i2c2);
-            if let Err(_) = cx.local.tof_front.start_ranging(
-                cx.local.i2c2,
-                Some(DEFAULT_DM),
-                Some(DEFAULT_TB),
-                Some(DEFAULT_IM_MS),
-            ) {
-                writeln!(cx.local.tx, "error restarting tof_front ranging").unwrap();
-            }
         }
         // run at 100 Hz
         print_tof_data::spawn_after(Duration::<u64, 1, 1000>::millis(10)).unwrap();

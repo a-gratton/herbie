@@ -39,7 +39,6 @@ pub const DISTANCE_TOLERANCE_MM: i32 = 30;
 
 // linear path correction tuning
 pub const SIDE_DIST_COMPENSATION_PID_KP: f32 = 0.0015;
-// pub const SIDE_DIST_COMPENSATION_PID_KP: f32 = 0.0;
 pub const SIDE_DIST_COMPENSATION_PID_KI: f32 = 0.0;
 pub const SIDE_DIST_COMPENSATION_PID_KD: f32 = 0.0;
 pub const SIDE_DIST_COMPENSATION_PID_OUT_LIM: f32 = 1.0;
@@ -59,4 +58,8 @@ pub const SMOOTH_ACCEL_NUM_SAMPLES: usize = 1;
 // steady-state samples required for transition
 pub const STATE_TRANSITION_SAMPLES: usize = 3;
 
+// angle correction frequency (every n samples at 100 Hz)
 pub const ANGLE_CORRECT_SAMPLES: usize = 40;
+
+// leg to start open loop inner turns
+pub const INNER_TURNS_LEG: usize = 8;

@@ -26,7 +26,7 @@ pub struct VL53L1<I2C, SCL, SDA, XSHUT> {
     _i2c: PhantomData<I2C>,
     _scl: PhantomData<SCL>,
     _sda: PhantomData<SDA>,
-    xshut: Option<XSHUT>
+    xshut: Option<XSHUT>,
 }
 
 impl<I2C, SCL, SDA, XSHUT> VL53L1<I2C, SCL, SDA, XSHUT>
@@ -38,10 +38,19 @@ where
     pub fn new(
         i2c: &mut I2c<I2C, (SCL, SDA)>,
         i2c_addr: u8,
-        mut xshut: Option<XSHUT>,
+        xshut: Option<XSHUT>,
     ) -> Result<VL53L1<I2C, SCL, SDA, XSHUT>, Error> {
         let mut dev = VL53L1::default();
         dev.xshut = xshut;
+        if dev.xshut.is_some() {
+            match dev.xshut.as_mut().unwrap().set_high() {
+                Ok(_) => {}
+                Err(_) => {
+                    return Err(Error::NoAcknowledge(NoAcknowledgeSource::Unknown));
+                }
+            }
+        }
+        delay(1_000_000);
         match dev.get_sensor_id(i2c) {
             Ok(_) => {
                 // sensor cold boot, init and set new address
@@ -90,8 +99,7 @@ where
     }
 
     fn sensor_init(&self, i2c: &mut I2c<I2C, (SCL, SDA)>) -> Result<(), Error> {
-        // ensure fresh software state
-        // self.software_reset(i2c)?;
+        // ensure sensor is alive
         while self.get_boot_state(i2c).unwrap_or(0) & 0x01 != 0x01 {
             delay(10_000)
         }
@@ -129,7 +137,6 @@ where
         self.write_byte(i2c, SOFT_RESET, 0x00)?;
         delay(1000000);
         self.write_to_address(i2c, &SOFT_RESET, &[0x01], DEFAULT_I2C_ADDR)?;
-        // self.write_byte(i2c, SOFT_RESET, 0x01)?;
         delay(1000000);
         self.reload_i2c_address(i2c)?;
         Ok(())
@@ -141,17 +148,21 @@ where
             error = false;
             match self.xshut.as_mut().unwrap().set_low() {
                 Ok(_) => {}
-                Err(_) => { error = true; }
+                Err(_) => {
+                    error = true;
+                }
             }
             delay(10_000);
             match self.xshut.as_mut().unwrap().set_high() {
                 Ok(_) => {}
-                Err(_) => { error = true; }
+                Err(_) => {
+                    error = true;
+                }
             }
             delay(10_000);
         }
         if error == true {
-           Err(Error::NoAcknowledge(NoAcknowledgeSource::Unknown))
+            Err(Error::NoAcknowledge(NoAcknowledgeSource::Unknown))
         } else {
             self.reload_i2c_address(i2c)?;
             self.sensor_init(i2c)?;
