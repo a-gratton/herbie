@@ -17,13 +17,16 @@ mod app {
     use braincell::drivers::imu::icm20948;
     use braincell::drivers::motor::mdd3a;
     use braincell::drivers::tof::vl53l1x;
+    use braincell::drivers::tof::vl53l1x_constants;
     use braincell::filtering::{ahrs::mahony, sma};
     use core::fmt::Write;
     use cortex_m::asm;
     use panic_write::PanicHandler;
     use pid;
     use stm32f4xx_hal::{
-        gpio::{Alternate, Input, Output, Pin, PushPull, PA8, PA9, PB10, PC1, PC12, PC2, PC9},
+        gpio::{
+            Alternate, Input, OpenDrain, Output, Pin, PushPull, PA8, PA9, PB10, PC1, PC12, PC2, PC9,
+        },
         i2c::{I2c, Mode as i2cMode},
         pac::{I2C2, I2C3, SPI2, TIM1, TIM10, TIM12, TIM14, TIM2, TIM3, TIM4, TIM5, TIM8, USART2},
         prelude::*,
@@ -47,8 +50,8 @@ mod app {
     struct Local {
         i2c2: I2c<I2C2, (PB10, PC12)>,
         i2c3: I2c<I2C3, (PA8, PC9)>,
-        tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12>,
-        tof_left: vl53l1x::VL53L1<I2C3, PA8, PC9>,
+        tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12, Pin<'C', 10, Output<OpenDrain>>>,
+        tof_left: vl53l1x::VL53L1<I2C3, PA8, PC9, Pin<'C', 8, Output<OpenDrain>>>,
         imu: icm20948::ICM20948<
             Spi<SPI2, (PA9<Alternate<5>>, PC2<Alternate<5>>, PC1<Alternate<7>>)>,
             Pin<'B', 12, Output<PushPull>>,
@@ -144,36 +147,45 @@ mod app {
         let led = gpioa.pa5.into_push_pull_output();
 
         // set up ToF sensors
-        let tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12> =
-            match vl53l1x::VL53L1::new(&mut i2c2, sys_config::TOF_FRONT_ADDRESS) {
-                Ok(val) => val,
-                Err(_) => {
-                    writeln!(tx, "tof_front initialization failed\r").unwrap();
-                    panic!("tof_front initialization failed");
-                }
-            };
+        let tof_front_xshut = gpioc.pc10.into_open_drain_output();
+        let tof_front = match vl53l1x::VL53L1::new(
+            &mut i2c2,
+            sys_config::TOF_FRONT_ADDRESS,
+            Some(tof_front_xshut),
+        ) {
+            Ok(val) => val,
+            Err(_) => {
+                writeln!(tx, "tof_front initialization failed\r").unwrap();
+                panic!("tof_front initialization failed");
+            }
+        };
         if let Err(_) = tof_front.start_ranging(
             &mut i2c2,
-            Some(vl53l1x::DistanceMode::Short),
-            Some(vl53l1x::TimingBudget::Tb15ms),
-            Some(20),
+            Some(vl53l1x_constants::DEFAULT_DM),
+            Some(vl53l1x_constants::DEFAULT_TB),
+            Some(vl53l1x_constants::DEFAULT_IM_MS),
         ) {
             writeln!(tx, "error starting tof_front ranging").unwrap();
             panic!("tof_front start_ranging failed");
         }
-        let tof_left: vl53l1x::VL53L1<I2C3, PA8, PC9> =
-            match vl53l1x::VL53L1::new(&mut i2c3, sys_config::TOF_LEFT_ADDRESS) {
-                Ok(val) => val,
-                Err(_) => {
-                    writeln!(tx, "tof_left initialization failed\r").unwrap();
-                    panic!("tof_left initialization failed");
-                }
-            };
+
+        let tof_left_xshut = gpioc.pc8.into_open_drain_output();
+        let tof_left = match vl53l1x::VL53L1::new(
+            &mut i2c3,
+            sys_config::TOF_LEFT_ADDRESS,
+            Some(tof_left_xshut),
+        ) {
+            Ok(val) => val,
+            Err(_) => {
+                writeln!(tx, "tof_left initialization failed\r").unwrap();
+                panic!("tof_left initialization failed");
+            }
+        };
         if let Err(_) = tof_left.start_ranging(
             &mut i2c3,
-            Some(vl53l1x::DistanceMode::Short),
-            Some(vl53l1x::TimingBudget::Tb15ms),
-            Some(20),
+            Some(vl53l1x_constants::DEFAULT_DM),
+            Some(vl53l1x_constants::DEFAULT_TB),
+            Some(vl53l1x_constants::DEFAULT_IM_MS),
         ) {
             writeln!(tx, "error starting tof_left ranging").unwrap();
             panic!("tof_left start_ranging failed");

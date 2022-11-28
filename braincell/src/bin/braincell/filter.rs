@@ -106,20 +106,29 @@ pub fn filter_data(mut cx: filter_data::Context) {
                     cx.shared.tof_front_filter.lock(|tof_front_filter| {
                         tof_front_filter.insert(distance as i32);
                     });
+                } else {
+                    if matches!(cx.local.tof_front.hardware_reset(cx.local.i2c2), Err(_)) {
+                        cx.shared.tx.lock(|tx| {
+                            writeln!(tx, "tof front hardware reset failed\r").unwrap();
+                        });
+                    }
                 }
             }
-            Err(_e) => {}
+            Err(_e) => {
+                if matches!(cx.local.tof_front.hardware_reset(cx.local.i2c2), Err(_)) {
+                    cx.shared.tx.lock(|tx| {
+                        writeln!(tx, "tof front hardware reset failed\r").unwrap();
+                    });
+                }
+            }
         }
     }
     if matches!(cx.local.tof_front.clear_interrupt(cx.local.i2c2), Err(_)) {
-        if matches!(cx.local.tof_front.software_reset(cx.local.i2c2), Err(_)) {
+        if matches!(cx.local.tof_front.hardware_reset(cx.local.i2c2), Err(_)) {
             cx.shared.tx.lock(|tx| {
-                writeln!(tx, "tof front software reset failed\r").unwrap();
+                writeln!(tx, "tof front hardware reset failed\r").unwrap();
             });
         }
-        cx.shared.tx.lock(|tx| {
-            writeln!(tx, "tof front clear interrupt failed\r").unwrap();
-        });
     }
 
     if cx
@@ -134,20 +143,29 @@ pub fn filter_data(mut cx: filter_data::Context) {
                     cx.shared.tof_left_filter.lock(|tof_left_filter| {
                         tof_left_filter.insert(distance as i32);
                     });
+                } else {
+                    if matches!(cx.local.tof_left.hardware_reset(cx.local.i2c3), Err(_)) {
+                        cx.shared.tx.lock(|tx| {
+                            writeln!(tx, "tof left hardware reset failed\r").unwrap();
+                        });
+                    }
                 }
             }
-            Err(_e) => {}
+            Err(_e) => {
+                if matches!(cx.local.tof_left.hardware_reset(cx.local.i2c3), Err(_)) {
+                    cx.shared.tx.lock(|tx| {
+                        writeln!(tx, "tof left hardware reset failed\r").unwrap();
+                    });
+                }
+            }
         }
     }
     if matches!(cx.local.tof_left.clear_interrupt(cx.local.i2c3), Err(_)) {
-        if matches!(cx.local.tof_left.software_reset(cx.local.i2c3), Err(_)) {
+        if matches!(cx.local.tof_left.hardware_reset(cx.local.i2c3), Err(_)) {
             cx.shared.tx.lock(|tx| {
-                writeln!(tx, "tof left software reset failed\r").unwrap();
+                writeln!(tx, "tof left hardware reset failed\r").unwrap();
             });
         }
-        cx.shared.tx.lock(|tx| {
-            writeln!(tx, "tof left clear interrupt failed\r").unwrap();
-        });
     }
 
     // read IMU

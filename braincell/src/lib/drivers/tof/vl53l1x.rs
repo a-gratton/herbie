@@ -21,23 +21,36 @@ pub enum TimingBudget {
     Tb500ms = 500,
 }
 
-pub struct VL53L1<I2C, SCL, SDA> {
+pub struct VL53L1<I2C, SCL, SDA, XSHUT> {
     device_address: u8,
     _i2c: PhantomData<I2C>,
     _scl: PhantomData<SCL>,
     _sda: PhantomData<SDA>,
+    xshut: Option<XSHUT>,
 }
 
-impl<I2C, SCL, SDA> VL53L1<I2C, SCL, SDA>
+impl<I2C, SCL, SDA, XSHUT> VL53L1<I2C, SCL, SDA, XSHUT>
 where
     I2C: Instance,
     (SCL, SDA): Pins<I2C>,
+    XSHUT: embedded_hal::digital::v2::OutputPin,
 {
     pub fn new(
         i2c: &mut I2c<I2C, (SCL, SDA)>,
         i2c_addr: u8,
-    ) -> Result<VL53L1<I2C, SCL, SDA>, Error> {
+        xshut: Option<XSHUT>,
+    ) -> Result<VL53L1<I2C, SCL, SDA, XSHUT>, Error> {
         let mut dev = VL53L1::default();
+        dev.xshut = xshut;
+        if dev.xshut.is_some() {
+            match dev.xshut.as_mut().unwrap().set_high() {
+                Ok(_) => {}
+                Err(_) => {
+                    return Err(Error::NoAcknowledge(NoAcknowledgeSource::Unknown));
+                }
+            }
+        }
+        delay(1_000_000);
         match dev.get_sensor_id(i2c) {
             Ok(_) => {
                 // sensor cold boot, init and set new address
@@ -86,10 +99,9 @@ where
     }
 
     fn sensor_init(&self, i2c: &mut I2c<I2C, (SCL, SDA)>) -> Result<(), Error> {
-        // ensure fresh software state
-        self.software_reset(i2c)?;
+        // ensure sensor is alive
         while self.get_boot_state(i2c).unwrap_or(0) & 0x01 != 0x01 {
-            delay(100000)
+            delay(10_000)
         }
 
         // write configuration data
@@ -110,7 +122,7 @@ where
 
         self.start_ranging(i2c, Some(DEFAULT_DM), Some(DEFAULT_TB), Some(DEFAULT_IM_MS))?;
         while self.check_for_data_ready(i2c)? == false {
-            delay(100000);
+            delay(10_000);
         }
         self.stop_ranging(i2c)?;
         self.clear_interrupt(i2c)?;
@@ -125,10 +137,38 @@ where
         self.write_byte(i2c, SOFT_RESET, 0x00)?;
         delay(1000000);
         self.write_to_address(i2c, &SOFT_RESET, &[0x01], DEFAULT_I2C_ADDR)?;
-        // self.write_byte(i2c, SOFT_RESET, 0x01)?;
         delay(1000000);
         self.reload_i2c_address(i2c)?;
         Ok(())
+    }
+
+    pub fn hardware_reset(&mut self, i2c: &mut I2c<I2C, (SCL, SDA)>) -> Result<(), Error> {
+        let mut error: bool = true;
+        if self.xshut.is_some() {
+            error = false;
+            match self.xshut.as_mut().unwrap().set_low() {
+                Ok(_) => {}
+                Err(_) => {
+                    error = true;
+                }
+            }
+            delay(10_000);
+            match self.xshut.as_mut().unwrap().set_high() {
+                Ok(_) => {}
+                Err(_) => {
+                    error = true;
+                }
+            }
+            delay(10_000);
+        }
+        if error == true {
+            Err(Error::NoAcknowledge(NoAcknowledgeSource::Unknown))
+        } else {
+            self.reload_i2c_address(i2c)?;
+            self.sensor_init(i2c)?;
+            self.start_ranging(i2c, Some(DEFAULT_DM), Some(DEFAULT_TB), Some(DEFAULT_IM_MS))?;
+            Ok(())
+        }
     }
 
     pub fn clear_interrupt(&self, i2c: &mut I2c<I2C, (SCL, SDA)>) -> Result<(), Error> {
@@ -489,10 +529,11 @@ where
     }
 }
 
-impl<I2C, SCL, SDA> Default for VL53L1<I2C, SCL, SDA>
+impl<I2C, SCL, SDA, XSHUT> Default for VL53L1<I2C, SCL, SDA, XSHUT>
 where
     I2C: Instance,
     (SCL, SDA): Pins<I2C>,
+    XSHUT: embedded_hal::digital::v2::OutputPin,
 {
     fn default() -> Self {
         VL53L1 {
@@ -500,6 +541,7 @@ where
             _i2c: PhantomData,
             _scl: PhantomData,
             _sda: PhantomData,
+            xshut: None,
         }
     }
 }

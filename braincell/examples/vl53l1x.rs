@@ -8,7 +8,9 @@ mod app {
         vl53l1x_constants::{DEFAULT_DM, DEFAULT_IM_MS, DEFAULT_TB},
     };
     use core::fmt::Write;
+    use cortex_m::asm;
     use panic_write::PanicHandler;
+    use stm32f4xx_hal::gpio::{OpenDrain, Output, Pin};
     use stm32f4xx_hal::{
         gpio::{PA8, PB10, PC12, PC9},
         i2c::{I2c, Mode as i2cMode},
@@ -26,8 +28,8 @@ mod app {
         i2c2: I2c<I2C2, (PB10, PC12)>,
         i2c3: I2c<I2C3, (PA8, PC9)>,
         tx: core::pin::Pin<panic_write::PanicHandler<Tx<USART2>>>,
-        tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12>,
-        tof_left: vl53l1x::VL53L1<I2C3, PA8, PC9>,
+        tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12, Pin<'C', 10, Output<OpenDrain>>>,
+        tof_left: vl53l1x::VL53L1<I2C3, PA8, PC9, Pin<'C', 8, Output<OpenDrain>>>,
         front_dist: Option<u16>,
         left_dist: Option<u16>,
     }
@@ -83,14 +85,16 @@ mod app {
         let mut tx = PanicHandler::new(serial);
 
         // set up ToF sensors
-        let tof_front: vl53l1x::VL53L1<I2C2, PB10, PC12> =
-            match vl53l1x::VL53L1::new(&mut i2c2, 0x42) {
-                Ok(val) => val,
-                Err(_) => {
-                    writeln!(tx, "tof_front initialization failed\r").unwrap();
-                    panic!("tof_front initialization failed");
-                }
-            };
+        let mut tof_front_xshut = gpioc.pc10.into_open_drain_output();
+        tof_front_xshut.set_high();
+        asm::delay(1_000_000);
+        let tof_front = match vl53l1x::VL53L1::new(&mut i2c2, 0x42, Some(tof_front_xshut)) {
+            Ok(val) => val,
+            Err(_) => {
+                writeln!(tx, "tof_front initialization failed\r").unwrap();
+                panic!("tof_front initialization failed");
+            }
+        };
         if let Err(_) = tof_front.start_ranging(
             &mut i2c2,
             Some(DEFAULT_DM),
@@ -100,8 +104,10 @@ mod app {
             writeln!(tx, "error starting tof_front ranging").unwrap();
         }
 
-        let tof_left: vl53l1x::VL53L1<I2C3, PA8, PC9> = match vl53l1x::VL53L1::new(&mut i2c3, 0x69)
-        {
+        let mut tof_left_xshut = gpioc.pc8.into_open_drain_output();
+        tof_left_xshut.set_high();
+        asm::delay(1_000_000);
+        let tof_left = match vl53l1x::VL53L1::new(&mut i2c3, 0x69, Some(tof_left_xshut)) {
             Ok(val) => val,
             Err(_) => {
                 writeln!(tx, "tof_left initialization failed\r").unwrap();
